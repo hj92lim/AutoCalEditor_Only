@@ -691,8 +691,22 @@ class GitStatusDialog(QDialog):
         self.left_diff_viewer.clear()
         self.right_diff_viewer.clear()
 
+        # diff 내용이 비어있거나 의미있는 변경사항이 없는 경우 처리
+        if not diff_content or not diff_content.strip():
+            no_diff_msg = "변경사항이 없습니다."
+            self.left_diff_viewer.setText(no_diff_msg)
+            self.right_diff_viewer.setText(no_diff_msg)
+            return
+
         # diff 파싱
         left_lines, right_lines = self.parse_diff_content(diff_content)
+
+        # 파싱된 내용이 비어있는 경우 처리
+        if not left_lines and not right_lines:
+            no_content_msg = "표시할 diff 내용이 없습니다."
+            self.left_diff_viewer.setText(no_content_msg)
+            self.right_diff_viewer.setText(no_content_msg)
+            return
 
         # 왼쪽 뷰어 (이전 버전 + 삭제된 라인)
         self.populate_diff_viewer(self.left_diff_viewer, left_lines, "left")
@@ -704,7 +718,7 @@ class GitStatusDialog(QDialog):
         self.sync_scroll_bars()
 
     def parse_diff_content(self, diff_content):
-        """diff 내용을 파싱하여 좌우 버전으로 분리"""
+        """diff 내용을 파싱하여 좌우 버전으로 분리 (개선된 정렬 알고리즘)"""
         lines = diff_content.split('\n')
         left_lines = []  # 이전 버전 (기본 + 삭제된 라인)
         right_lines = []  # 현재 버전 (기본 + 추가된 라인)
@@ -712,47 +726,100 @@ class GitStatusDialog(QDialog):
         current_file = ""
         in_content = False
 
+        # 연속된 삭제/추가 라인을 그룹화하여 처리
+        pending_removals = []
+        pending_additions = []
+
+        def flush_pending_changes():
+            """대기 중인 삭제/추가 라인들을 정렬하여 처리"""
+            # 변경사항이 없으면 처리하지 않음
+            if not pending_removals and not pending_additions:
+                return
+
+            max_changes = max(len(pending_removals), len(pending_additions))
+
+            for i in range(max_changes):
+                # 왼쪽 (삭제된 라인)
+                if i < len(pending_removals):
+                    left_lines.append(('removed', pending_removals[i]))
+                else:
+                    left_lines.append(('empty', ''))
+
+                # 오른쪽 (추가된 라인)
+                if i < len(pending_additions):
+                    right_lines.append(('added', pending_additions[i]))
+                else:
+                    right_lines.append(('empty', ''))
+
+            pending_removals.clear()
+            pending_additions.clear()
+
         for line in lines:
             if line.startswith('diff --git'):
+                # 이전 변경사항 처리
+                flush_pending_changes()
+
                 current_file = line[11:]  # "diff --git " 제거
                 left_lines.append(('header', f'파일: {current_file}'))
                 right_lines.append(('header', f'파일: {current_file}'))
                 in_content = False
 
             elif line.startswith('@@'):
+                # 이전 변경사항 처리
+                flush_pending_changes()
+
                 in_content = True
-                # 청크 헤더는 건너뛰기
-                continue
+                # 청크 헤더 정보 추가 (선택사항)
+                chunk_info = line.strip()
+                left_lines.append(('chunk_header', chunk_info))
+                right_lines.append(('chunk_header', chunk_info))
 
             elif in_content:
                 if line.startswith('-'):
-                    # 삭제된 라인 - 왼쪽에만 표시 (빨간색)
-                    left_lines.append(('removed', line[1:]))
-                    # 오른쪽에는 빈 라인 추가 (정렬 유지)
-                    right_lines.append(('empty', ''))
+                    # 삭제된 라인을 대기 목록에 추가
+                    pending_removals.append(line[1:])
 
                 elif line.startswith('+'):
-                    # 추가된 라인 - 오른쪽에만 표시 (녹색)
-                    right_lines.append(('added', line[1:]))
-                    # 왼쪽에는 빈 라인 추가 (정렬 유지)
-                    left_lines.append(('empty', ''))
+                    # 추가된 라인을 대기 목록에 추가
+                    pending_additions.append(line[1:])
 
                 elif line.startswith(' ') or line == '':
+                    # 컨텍스트 라인 전에 대기 중인 변경사항 처리
+                    flush_pending_changes()
+
                     # 컨텍스트 라인 - 양쪽에 모두 표시
                     content = line[1:] if line.startswith(' ') else ''
                     left_lines.append(('context', content))
                     right_lines.append(('context', content))
 
+        # 마지막에 남은 변경사항 처리
+        flush_pending_changes()
+
+        # 실제 변경사항이 있는지 확인 (헤더와 청크 헤더만 있는 경우 제외)
+        has_actual_changes = any(
+            line_type in ['removed', 'added', 'context']
+            for line_type, _ in left_lines + right_lines
+        )
+
+        if not has_actual_changes:
+            # 실제 변경사항이 없으면 빈 리스트 반환
+            return [], []
+
         return left_lines, right_lines
 
     def populate_diff_viewer(self, viewer, lines, side):
-        """diff 뷰어에 라인들을 채우기"""
+        """diff 뷰어에 라인들을 채우기 (개선된 포맷팅)"""
         cursor = viewer.textCursor()
 
         # 포맷 설정
         header_format = QTextCharFormat()
         header_format.setForeground(QColor("#0056b3"))
         header_format.setFontWeight(QFont.Bold)
+
+        chunk_header_format = QTextCharFormat()
+        chunk_header_format.setForeground(QColor("#6f42c1"))
+        chunk_header_format.setBackground(QColor("#f8f9fa"))
+        chunk_header_format.setFontWeight(QFont.Bold)
 
         context_format = QTextCharFormat()
         context_format.setForeground(QColor("#333"))
@@ -766,7 +833,8 @@ class GitStatusDialog(QDialog):
         added_format.setBackground(QColor("#d4edda"))
 
         empty_format = QTextCharFormat()
-        empty_format.setForeground(QColor("#f0f0f0"))
+        empty_format.setForeground(QColor("#e9ecef"))
+        empty_format.setBackground(QColor("#f8f9fa"))
 
         for line_type, content in lines:
             if line_type == 'header':
@@ -774,9 +842,13 @@ class GitStatusDialog(QDialog):
                 cursor.insertText(f'{content}\n')
                 cursor.insertText('-' * 50 + '\n')
 
+            elif line_type == 'chunk_header':
+                cursor.setCharFormat(chunk_header_format)
+                cursor.insertText(f'{content}\n')
+
             elif line_type == 'context':
                 cursor.setCharFormat(context_format)
-                cursor.insertText(f'{content}\n')
+                cursor.insertText(f'  {content}\n')  # 컨텍스트 라인은 들여쓰기
 
             elif line_type == 'removed' and side == 'left':
                 cursor.setCharFormat(removed_format)
@@ -788,7 +860,7 @@ class GitStatusDialog(QDialog):
 
             elif line_type == 'empty':
                 cursor.setCharFormat(empty_format)
-                cursor.insertText('\n')
+                cursor.insertText('\n')  # 빈 라인은 단순하게 처리
 
         # 커서를 맨 위로 이동
         cursor.movePosition(QTextCursor.Start)
