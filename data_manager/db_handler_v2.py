@@ -618,7 +618,7 @@ class DBHandlerV2:
 
     def shift_rows(self, sheet_id: int, start_row: int, shift_amount: int) -> None:
         """
-        지정된 행부터 모든 행을 위/아래로 이동
+        지정된 행부터 모든 행을 위/아래로 이동 - 안전성 강화
 
         Args:
             sheet_id: 시트 ID
@@ -634,21 +634,33 @@ class DBHandlerV2:
                 self.conn.commit()
                 return
 
-            if shift_amount > 0:
-                # 아래로 이동 (행 삽입 시): 임시 음수 값으로 먼저 이동하여 충돌 방지
-                # 1단계: 임시 음수 값으로 이동
-                self.cursor.execute("""
-                    UPDATE cells
-                    SET row = -(row + ?)
-                    WHERE sheet_id = ? AND row >= ?
-                """, (shift_amount + 1000000, sheet_id, start_row))
+            # 이동 전 영향받는 셀 수 확인
+            self.cursor.execute("""
+                SELECT COUNT(*) FROM cells
+                WHERE sheet_id = ? AND row >= ?
+            """, (sheet_id, start_row))
+            cells_to_move = self.cursor.fetchone()[0]
 
-                # 2단계: 최종 위치로 이동
+            logging.debug(f"시트 {sheet_id}: 행 {start_row}부터 {shift_amount}만큼 이동 예정 ({cells_to_move}개 셀)")
+
+            if shift_amount > 0:
+                # 아래로 이동 (행 삽입 시): 간단한 방법 사용
+                # 큰 행 번호부터 역순으로 처리하여 충돌 방지
                 self.cursor.execute("""
-                    UPDATE cells
-                    SET row = -row
-                    WHERE sheet_id = ? AND row < 0
-                """, (sheet_id,))
+                    SELECT DISTINCT row FROM cells
+                    WHERE sheet_id = ? AND row >= ?
+                    ORDER BY row DESC
+                """, (sheet_id, start_row))
+
+                rows_to_move = [row[0] for row in self.cursor.fetchall()]
+
+                # 큰 행 번호부터 역순으로 이동
+                for row in rows_to_move:
+                    self.cursor.execute("""
+                        UPDATE cells
+                        SET row = row + ?
+                        WHERE sheet_id = ? AND row = ?
+                    """, (shift_amount, sheet_id, row))
 
             elif shift_amount < 0:
                 # 위로 이동 (행 삭제 시): 직접 이동 (음수 이동이므로 충돌 없음)
@@ -659,7 +671,7 @@ class DBHandlerV2:
                 """, (shift_amount, sheet_id, start_row))
 
             affected_count = self.cursor.rowcount
-            logging.debug(f"시트 {sheet_id}: 행 {start_row}부터 {shift_amount}만큼 이동 ({affected_count}개 셀)")
+            logging.debug(f"시트 {sheet_id}: 행 이동 완료 ({affected_count}개 셀 이동)")
 
             # 트랜잭션 커밋
             self.conn.commit()
@@ -675,7 +687,7 @@ class DBHandlerV2:
 
     def shift_columns(self, sheet_id: int, start_col: int, shift_amount: int) -> None:
         """
-        지정된 열부터 모든 열을 좌/우로 이동
+        지정된 열부터 모든 열을 좌/우로 이동 - 안전성 강화
 
         Args:
             sheet_id: 시트 ID
@@ -691,21 +703,33 @@ class DBHandlerV2:
                 self.conn.commit()
                 return
 
-            if shift_amount > 0:
-                # 오른쪽으로 이동 (열 삽입 시): 임시 음수 값으로 먼저 이동하여 충돌 방지
-                # 1단계: 임시 음수 값으로 이동
-                self.cursor.execute("""
-                    UPDATE cells
-                    SET col = -(col + ?)
-                    WHERE sheet_id = ? AND col >= ?
-                """, (shift_amount + 1000000, sheet_id, start_col))
+            # 이동 전 영향받는 셀 수 확인
+            self.cursor.execute("""
+                SELECT COUNT(*) FROM cells
+                WHERE sheet_id = ? AND col >= ?
+            """, (sheet_id, start_col))
+            cells_to_move = self.cursor.fetchone()[0]
 
-                # 2단계: 최종 위치로 이동
+            logging.debug(f"시트 {sheet_id}: 열 {start_col}부터 {shift_amount}만큼 이동 예정 ({cells_to_move}개 셀)")
+
+            if shift_amount > 0:
+                # 오른쪽으로 이동 (열 삽입 시): 간단한 방법 사용
+                # 큰 열 번호부터 역순으로 처리하여 충돌 방지
                 self.cursor.execute("""
-                    UPDATE cells
-                    SET col = -col
-                    WHERE sheet_id = ? AND col < 0
-                """, (sheet_id,))
+                    SELECT DISTINCT col FROM cells
+                    WHERE sheet_id = ? AND col >= ?
+                    ORDER BY col DESC
+                """, (sheet_id, start_col))
+
+                cols_to_move = [col[0] for col in self.cursor.fetchall()]
+
+                # 큰 열 번호부터 역순으로 이동
+                for col in cols_to_move:
+                    self.cursor.execute("""
+                        UPDATE cells
+                        SET col = col + ?
+                        WHERE sheet_id = ? AND col = ?
+                    """, (shift_amount, sheet_id, col))
 
             elif shift_amount < 0:
                 # 왼쪽으로 이동 (열 삭제 시): 직접 이동 (음수 이동이므로 충돌 없음)
@@ -716,7 +740,7 @@ class DBHandlerV2:
                 """, (shift_amount, sheet_id, start_col))
 
             affected_count = self.cursor.rowcount
-            logging.debug(f"시트 {sheet_id}: 열 {start_col}부터 {shift_amount}만큼 이동 ({affected_count}개 셀)")
+            logging.debug(f"시트 {sheet_id}: 열 이동 완료 ({affected_count}개 셀 이동)")
 
             # 트랜잭션 커밋
             self.conn.commit()

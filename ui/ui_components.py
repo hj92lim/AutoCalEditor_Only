@@ -26,31 +26,40 @@ class FastItemDelegate(QStyledItemDelegate):
         self.size_cache = {}  # 크기 캐싱
 
     def paint(self, painter, option, index):
-        """셀 렌더링 최적화"""
-        # 선택 상태 렌더링
-        if option.state & QStyle.State_Selected:
-            painter.fillRect(option.rect, option.palette.highlight())
-        else:
-            # 이 줄 추가: 선택되지 않은 셀도 배경색 설정 (흰색 또는 기본 배경색)
-            painter.fillRect(option.rect, option.palette.base())
+        """셀 렌더링 최적화 - QPainter 안전성 강화"""
+        try:
+            # QPainter 상태 저장
+            painter.save()
 
-        # 텍스트 가져오기
-        text = index.data(Qt.DisplayRole)
-        if not text:
-            return
+            # 선택 상태 렌더링
+            if option.state & QStyle.State_Selected:
+                painter.fillRect(option.rect, option.palette.highlight())
+            else:
+                # 이 줄 추가: 선택되지 않은 셀도 배경색 설정 (흰색 또는 기본 배경색)
+                painter.fillRect(option.rect, option.palette.base())
 
-        # 텍스트 직접 렌더링 (속도 향상)
-        painter.setPen(option.palette.color(
-            QPalette.HighlightedText if option.state & QStyle.State_Selected
-            else QPalette.Text
-        ))
+            # 텍스트 가져오기
+            text = index.data(Qt.DisplayRole)
+            if not text:
+                return
 
-        text_rect = option.rect.adjusted(self.text_margin, 0, -self.text_margin, 0)
-        painter.drawText(
-            text_rect,
-            Qt.AlignLeft | Qt.AlignVCenter,
-            text
-        )
+            # 텍스트 직접 렌더링 (속도 향상)
+            painter.setPen(option.palette.color(
+                QPalette.HighlightedText if option.state & QStyle.State_Selected
+                else QPalette.Text
+            ))
+
+            text_rect = option.rect.adjusted(self.text_margin, 0, -self.text_margin, 0)
+            painter.drawText(
+                text_rect,
+                Qt.AlignLeft | Qt.AlignVCenter,
+                text
+            )
+        except Exception as e:
+            logging.error(f"FastItemDelegate paint 오류: {e}")
+        finally:
+            # QPainter 상태 복원 (중요: 항상 실행되어야 함)
+            painter.restore()
 
     def sizeHint(self, option, index):
         """셀 크기 계산 최적화 (캐싱)"""
@@ -452,36 +461,34 @@ class VirtualizedGridModel(QAbstractTableModel):
         return None
 
     def insertRows(self, row, count, parent=QModelIndex()):
-        """모델에 행 삽입"""
+        """모델에 행 삽입 - 안전성 강화"""
         if parent.isValid() or self.sheet_id is None or count <= 0:
             return False
 
         logging.debug(f"Model inserting {count} rows at {row}")
-        # 뷰에 알림 시작 (삽입될 위치와 개수)
-        self.beginInsertRows(parent, row, row + count - 1)
+
         try:
+            # 뷰에 알림 시작 (삽입될 위치와 개수)
+            self.beginInsertRows(parent, row, row + count - 1)
+
             # DB에서 행 이동 (삽입 위치 아래 행들을 count만큼 아래로)
             self.db.shift_rows(self.sheet_id, row, count)
 
             # 모델 내부 상태 업데이트
             self.row_count += count
 
-            # 캐시 및 수정된 셀 업데이트 (가장 간단한 방법: 전체 초기화)
-            # TODO: 더 효율적인 캐시 업데이트 방법 고려
-            self.cache = {}
-            self.modified_cells = set()
-            logging.debug(f"Cache and modified cells cleared after row insertion.")
+            # 캐시 업데이트: 영향받는 행들만 조정 (전체 초기화 대신)
+            self._update_cache_after_row_insertion(row, count)
+
+            logging.debug(f"Model rows inserted. New row count: {self.row_count}")
+            return True
 
         except Exception as e:
             logging.error(f"Error inserting rows in DB: {e}")
-            self.endInsertRows() # 실패해도 end 호출 필요
             return False
         finally:
-            # 뷰에 알림 종료
+            # 뷰에 알림 종료 (항상 실행되어야 함)
             self.endInsertRows()
-
-        logging.debug(f"Model rows inserted. New row count: {self.row_count}")
-        return True
 
     def removeRows(self, row, count, parent=QModelIndex()):
         """모델에서 행 삭제"""
@@ -517,35 +524,34 @@ class VirtualizedGridModel(QAbstractTableModel):
         return True
 
     def insertColumns(self, column, count, parent=QModelIndex()):
-        """모델에 열 삽입"""
+        """모델에 열 삽입 - 안전성 강화"""
         if parent.isValid() or self.sheet_id is None or count <= 0:
             return False
 
         logging.debug(f"Model inserting {count} columns at {column}")
-        # 뷰에 알림 시작
-        self.beginInsertColumns(parent, column, column + count - 1)
+
         try:
+            # 뷰에 알림 시작
+            self.beginInsertColumns(parent, column, column + count - 1)
+
             # DB에서 열 이동
             self.db.shift_columns(self.sheet_id, column, count)
 
             # 모델 내부 상태 업데이트
             self.col_count += count
 
-            # 캐시 및 수정된 셀 업데이트 (전체 초기화)
-            self.cache = {}
-            self.modified_cells = set()
-            logging.debug(f"Cache and modified cells cleared after column insertion.")
+            # 캐시 업데이트: 영향받는 열들만 조정 (전체 초기화 대신)
+            self._update_cache_after_column_insertion(column, count)
+
+            logging.debug(f"Model columns inserted. New column count: {self.col_count}")
+            return True
 
         except Exception as e:
             logging.error(f"Error inserting columns in DB: {e}")
-            self.endInsertColumns()
             return False
         finally:
-            # 뷰에 알림 종료
+            # 뷰에 알림 종료 (항상 실행되어야 함)
             self.endInsertColumns()
-
-        logging.debug(f"Model columns inserted. New column count: {self.col_count}")
-        return True
 
     def removeColumns(self, column, count, parent=QModelIndex()):
         """모델에서 열 삭제"""
@@ -580,6 +586,70 @@ class VirtualizedGridModel(QAbstractTableModel):
 
         logging.debug(f"Model columns removed. New column count: {self.col_count}")
         return True
+
+    def _update_cache_after_row_insertion(self, insert_row: int, count: int):
+        """행 삽입 후 캐시 업데이트 - 데이터 손실 방지"""
+        try:
+            # 삽입 위치 이후의 행들을 아래로 이동
+            new_cache = {}
+            for cached_row, row_data in self.cache.items():
+                if cached_row >= insert_row:
+                    # 삽입 위치 이후의 행들은 count만큼 아래로 이동
+                    new_cache[cached_row + count] = row_data
+                else:
+                    # 삽입 위치 이전의 행들은 그대로 유지
+                    new_cache[cached_row] = row_data
+
+            self.cache = new_cache
+
+            # 수정된 셀 정보도 업데이트
+            new_modified_cells = set()
+            for row, col in self.modified_cells:
+                if row >= insert_row:
+                    new_modified_cells.add((row + count, col))
+                else:
+                    new_modified_cells.add((row, col))
+
+            self.modified_cells = new_modified_cells
+            logging.debug(f"캐시 업데이트 완료: 행 {insert_row}에 {count}개 행 삽입")
+
+        except Exception as e:
+            logging.error(f"캐시 업데이트 중 오류: {e}")
+            # 오류 발생 시에만 전체 초기화
+            self.cache = {}
+            self.modified_cells = set()
+
+    def _update_cache_after_column_insertion(self, insert_col: int, count: int):
+        """열 삽입 후 캐시 업데이트 - 데이터 손실 방지"""
+        try:
+            # 각 행의 열 데이터를 업데이트
+            for row, row_data in self.cache.items():
+                new_row_data = {}
+                for col, value in row_data.items():
+                    if col >= insert_col:
+                        # 삽입 위치 이후의 열들은 count만큼 오른쪽으로 이동
+                        new_row_data[col + count] = value
+                    else:
+                        # 삽입 위치 이전의 열들은 그대로 유지
+                        new_row_data[col] = value
+                self.cache[row] = new_row_data
+
+            # 수정된 셀 정보도 업데이트
+            new_modified_cells = set()
+            for row, col in self.modified_cells:
+                if col >= insert_col:
+                    new_modified_cells.add((row, col + count))
+                else:
+                    new_modified_cells.add((row, col))
+
+            self.modified_cells = new_modified_cells
+            logging.debug(f"캐시 업데이트 완료: 열 {insert_col}에 {count}개 열 삽입")
+
+        except Exception as e:
+            logging.error(f"캐시 업데이트 중 오류: {e}")
+            # 오류 발생 시에만 전체 초기화
+            self.cache = {}
+            self.modified_cells = set()
 class ExcelGridView(QTableView):
     """가상화된 Excel 스타일 그리드 뷰"""
 
@@ -960,25 +1030,42 @@ class ExcelGridView(QTableView):
             event.accept()
             return
 
-        # Ctrl + + (더하기): 행/열 삽입
+        # Ctrl + + (더하기): 행/열 삽입 - 안전성 강화
         elif (event.key() == Qt.Key_Plus and event.modifiers() == Qt.ControlModifier) or \
             (event.key() == Qt.Key_Equal and event.modifiers() == Qt.ControlModifier):  # + 키는 = 키와 같을 수 있음
-            logging.debug(f"Ctrl++ detected, row_selected={self.is_full_row_selected()}, col_selected={self.is_full_column_selected()}")
-            if self.is_full_row_selected():
-                self.insert_selected_rows()
-                event.accept()
-                return
-            elif self.is_full_column_selected():
-                self.insert_selected_columns()
-                event.accept()
-                return
-            # 선택 모드 기반 처리
-            elif self.selectionBehavior() == QAbstractItemView.SelectRows and selection_model.hasSelection():
-                self.insert_selected_rows()
-                event.accept()
-                return
-            elif self.selectionBehavior() == QAbstractItemView.SelectColumns and selection_model.hasSelection():
-                self.insert_selected_columns()
+
+            logging.debug(f"Ctrl++ 키 감지됨")
+            logging.debug(f"전체 행 선택: {self.is_full_row_selected()}")
+            logging.debug(f"전체 열 선택: {self.is_full_column_selected()}")
+
+            try:
+                if self.is_full_row_selected():
+                    logging.debug("행 삽입 실행")
+                    self.insert_selected_rows()
+                    event.accept()
+                    return
+                elif self.is_full_column_selected():
+                    logging.debug("열 삽입 실행")
+                    self.insert_selected_columns()
+                    event.accept()
+                    return
+                # 선택 모드 기반 처리
+                elif self.selectionBehavior() == QAbstractItemView.SelectRows and selection_model.hasSelection():
+                    logging.debug("행 선택 모드에서 행 삽입")
+                    self.insert_selected_rows()
+                    event.accept()
+                    return
+                elif self.selectionBehavior() == QAbstractItemView.SelectColumns and selection_model.hasSelection():
+                    logging.debug("열 선택 모드에서 열 삽입")
+                    self.insert_selected_columns()
+                    event.accept()
+                    return
+                else:
+                    logging.debug("행/열 전체 선택이 아님 - 기본 처리")
+
+            except Exception as e:
+                logging.error(f"Ctrl++ 처리 중 오류: {e}")
+                QMessageBox.critical(self, "삽입 오류", f"행/열 삽입 중 오류가 발생했습니다:\n{str(e)}")
                 event.accept()
                 return
 
@@ -1253,12 +1340,42 @@ class ExcelGridView(QTableView):
         return min_col, len(full_columns)
 
     def insert_selected_rows(self):
-        """선택된 행 위에 같은 개수의 행 삽입"""
-        if not self.model: return
+        """선택된 행 위에 같은 개수의 행 삽입 - 안전성 강화"""
+        if not self.model:
+            logging.warning("모델이 설정되지 않아 행 삽입을 수행할 수 없습니다.")
+            return
+
         rows_range = self.get_selected_rows_range()
         if rows_range:
             start_row, count = rows_range
-            self.model.insertRows(start_row, count)
+            logging.debug(f"행 삽입 시도: 위치 {start_row}, 개수 {count}")
+
+            try:
+                # 삽입 전 현재 상태 저장 (필요시 복구용)
+                current_selection = self.selectionModel().selection()
+
+                # 행 삽입 실행
+                success = self.model.insertRows(start_row, count)
+
+                if success:
+                    logging.debug(f"행 삽입 성공: {start_row}에 {count}개 행")
+                    # 뷰 강제 업데이트
+                    self.viewport().update()
+                    # 선택 영역 초기화 (삽입된 행들이 선택되도록)
+                    self.clearSelection()
+                    # 삽입된 첫 번째 행으로 이동
+                    if start_row < self.model.rowCount():
+                        first_index = self.model.index(start_row, 0)
+                        self.setCurrentIndex(first_index)
+                else:
+                    logging.error("행 삽입 실패")
+                    QMessageBox.warning(self, "행 삽입 실패", "행 삽입 중 오류가 발생했습니다.")
+
+            except Exception as e:
+                logging.error(f"행 삽입 중 예외 발생: {e}")
+                QMessageBox.critical(self, "행 삽입 오류", f"행 삽입 중 오류가 발생했습니다:\n{str(e)}")
+        else:
+            logging.debug("선택된 행 범위를 찾을 수 없습니다.")
 
     def delete_selected_rows(self):
         """선택된 행 삭제"""
@@ -1274,13 +1391,39 @@ class ExcelGridView(QTableView):
                 self.model.removeRows(start_row, count)
 
     def insert_selected_columns(self):
-        """선택된 열 왼쪽에 같은 개수의 열 삽입"""
-        if not self.model: return
+        """선택된 열 왼쪽에 같은 개수의 열 삽입 - 안전성 강화"""
+        if not self.model:
+            logging.warning("모델이 설정되지 않아 열 삽입을 수행할 수 없습니다.")
+            return
+
         cols_range = self.get_selected_columns_range()
         if cols_range:
             start_col, count = cols_range
-            self.model.insertColumns(start_col, count)
-            logging.debug(f"Inserting {count} columns at column {start_col}")
+            logging.debug(f"열 삽입 시도: 위치 {start_col}, 개수 {count}")
+
+            try:
+                # 열 삽입 실행
+                success = self.model.insertColumns(start_col, count)
+
+                if success:
+                    logging.debug(f"열 삽입 성공: {start_col}에 {count}개 열")
+                    # 뷰 강제 업데이트
+                    self.viewport().update()
+                    # 선택 영역 초기화
+                    self.clearSelection()
+                    # 삽입된 첫 번째 열로 이동
+                    if start_col < self.model.columnCount():
+                        first_index = self.model.index(0, start_col)
+                        self.setCurrentIndex(first_index)
+                else:
+                    logging.error("열 삽입 실패")
+                    QMessageBox.warning(self, "열 삽입 실패", "열 삽입 중 오류가 발생했습니다.")
+
+            except Exception as e:
+                logging.error(f"열 삽입 중 예외 발생: {e}")
+                QMessageBox.critical(self, "열 삽입 오류", f"열 삽입 중 오류가 발생했습니다:\n{str(e)}")
+        else:
+            logging.debug("선택된 열 범위를 찾을 수 없습니다.")
 
     def delete_selected_columns(self):
         """선택된 열 삭제 - 완전 재구현"""
@@ -1538,10 +1681,45 @@ class ExcelGridView(QTableView):
                     self.model.removeRows(row, 1)
 
     def setModel(self, model):
-        """모델 연결 시 셀 크기 자동 조정"""
+        """모델 연결 시 셀 크기 자동 조정 및 뷰 업데이트 강화"""
         super().setModel(model)
         self.model = model
         self.adjustCellSizes()  # 모델(시트) 연결 시 셀 크기 조정
+
+        # 뷰 강제 업데이트 (QPainter 오류 방지)
+        if model:
+            self.viewport().update()
+            # 모델 변경 시그널 연결
+            model.dataChanged.connect(self._on_model_data_changed)
+            model.rowsInserted.connect(self._on_rows_inserted)
+            model.columnsInserted.connect(self._on_columns_inserted)
+
+    def _on_model_data_changed(self, top_left, bottom_right, roles):
+        """모델 데이터 변경 시 뷰 업데이트"""
+        try:
+            self.viewport().update()
+        except Exception as e:
+            logging.error(f"뷰 업데이트 중 오류: {e}")
+
+    def _on_rows_inserted(self, parent, first, last):
+        """행 삽입 후 뷰 업데이트"""
+        try:
+            self.viewport().update()
+            # 선택 영역 조정 (필요시)
+            self.clearSelection()
+            logging.debug(f"행 삽입 후 뷰 업데이트 완료: {first}-{last}")
+        except Exception as e:
+            logging.error(f"행 삽입 후 뷰 업데이트 중 오류: {e}")
+
+    def _on_columns_inserted(self, parent, first, last):
+        """열 삽입 후 뷰 업데이트"""
+        try:
+            self.viewport().update()
+            # 선택 영역 조정 (필요시)
+            self.clearSelection()
+            logging.debug(f"열 삽입 후 뷰 업데이트 완료: {first}-{last}")
+        except Exception as e:
+            logging.error(f"열 삽입 후 뷰 업데이트 중 오류: {e}")
 
     def load_sheet(self, sheet_id):
         """시트 로드(예시, 실제 구현에 맞게 조정)"""
