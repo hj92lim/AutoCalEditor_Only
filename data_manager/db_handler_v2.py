@@ -635,27 +635,21 @@ class DBHandlerV2:
                 return
 
             if shift_amount > 0:
-                # 아래로 이동 (행 삽입 시): 임시 음수 값으로 먼저 이동하여 충돌 방지
-                # 1단계: 임시 음수 값으로 이동
-                self.cursor.execute("""
-                    UPDATE cells
-                    SET row = -(row + ?)
-                    WHERE sheet_id = ? AND row >= ?
-                """, (shift_amount + 1000000, sheet_id, start_row))
-
-                # 2단계: 최종 위치로 이동
-                self.cursor.execute("""
-                    UPDATE cells
-                    SET row = -row
-                    WHERE sheet_id = ? AND row < 0
-                """, (sheet_id,))
-
-            elif shift_amount < 0:
-                # 위로 이동 (행 삭제 시): 직접 이동 (음수 이동이므로 충돌 없음)
+                # 아래로 이동 (행 삽입 시): ORDER BY row DESC 사용
                 self.cursor.execute("""
                     UPDATE cells
                     SET row = row + ?
                     WHERE sheet_id = ? AND row >= ?
+                    ORDER BY row DESC
+                """, (shift_amount, sheet_id, start_row))
+
+            elif shift_amount < 0:
+                # 위로 이동 (행 삭제 시): ORDER BY row ASC 사용
+                self.cursor.execute("""
+                    UPDATE cells
+                    SET row = row + ?
+                    WHERE sheet_id = ? AND row >= ?
+                    ORDER BY row ASC
                 """, (shift_amount, sheet_id, start_row))
 
             affected_count = self.cursor.rowcount
@@ -692,27 +686,21 @@ class DBHandlerV2:
                 return
 
             if shift_amount > 0:
-                # 오른쪽으로 이동 (열 삽입 시): 임시 음수 값으로 먼저 이동하여 충돌 방지
-                # 1단계: 임시 음수 값으로 이동
-                self.cursor.execute("""
-                    UPDATE cells
-                    SET col = -(col + ?)
-                    WHERE sheet_id = ? AND col >= ?
-                """, (shift_amount + 1000000, sheet_id, start_col))
-
-                # 2단계: 최종 위치로 이동
-                self.cursor.execute("""
-                    UPDATE cells
-                    SET col = -col
-                    WHERE sheet_id = ? AND col < 0
-                """, (sheet_id,))
-
-            elif shift_amount < 0:
-                # 왼쪽으로 이동 (열 삭제 시): 직접 이동 (음수 이동이므로 충돌 없음)
+                # 오른쪽으로 이동 (열 삽입 시): ORDER BY col DESC 사용
                 self.cursor.execute("""
                     UPDATE cells
                     SET col = col + ?
                     WHERE sheet_id = ? AND col >= ?
+                    ORDER BY col DESC
+                """, (shift_amount, sheet_id, start_col))
+
+            elif shift_amount < 0:
+                # 왼쪽으로 이동 (열 삭제 시): ORDER BY col ASC 사용
+                self.cursor.execute("""
+                    UPDATE cells
+                    SET col = col + ?
+                    WHERE sheet_id = ? AND col >= ?
+                    ORDER BY col ASC
                 """, (shift_amount, sheet_id, start_col))
 
             affected_count = self.cursor.rowcount
