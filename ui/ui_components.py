@@ -970,8 +970,8 @@ class ExcelGridView(QTableView):
                     return
 
                 logging.debug(f"Deferred updates for sheet {sheet_id}: Clearing selection, setting current index, adjusting sizes.")
-            self.clearSelection()
-            self.setCurrentIndex(self.model.index(0, 0))
+                self.clearSelection()
+                self.setCurrentIndex(self.model.index(0, 0))
                 self.adjustCellSizes() # Adjust sizes after model is loaded and view is likely more stable
                 logging.info(f"Sheet {sheet_id} deferred UI updates completed.")
 
