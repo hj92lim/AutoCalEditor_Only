@@ -1,0 +1,108 @@
+# AutoCalEditor_Only .gitignore (2023.07.12)
+# 빌드 결과물, 프로그램 캐시, 개인환경 파일들
+
+# ===== Python 관련 =====
+# 바이트코드 캐시
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 배포 / 패키징
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# PyInstaller
+*.manifest
+*.spec
+
+# ===== Cython 빌드 결과물 =====
+# Cython이 생성하는 C 코드 파일들
+cython_extensions/*.c
+
+# 컴파일된 확장 모듈들
+# Windows
+*.pyd
+*.cp*.pyd
+
+# Linux/Mac
+*.so
+
+# ===== 데이터베이스 관련 =====
+# SQLite WAL 및 SHM 파일들 (임시 파일)
+*.db-wal
+*.db-shm
+
+# ===== 로그 파일들 =====
+logs/
+*.log
+
+# ===== 자동 생성되는 설정 파일 =====
+# 빌드 스크립트에서 자동 생성되는 성능 설정 파일
+performance_settings.py
+
+# ===== IDE 및 에디터 설정 =====
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# ===== 운영체제별 파일들 =====
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+# ===== 임시 파일들 =====
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# ===== 환경 변수 및 개인 설정 =====
+.env
+.env.local
+.env.*.local
+
+# ===== 테스트 관련 =====
+.coverage
+.pytest_cache/
+.tox/
+htmlcov/
+
+# ===== 기타 =====
+# 압축 파일들
+*.zip
+*.rar
+*.7z
+*.tar.gz
+
+# 문서 임시 파일들
+~$*.docx
+~$*.xlsx
+~$*.pptx
