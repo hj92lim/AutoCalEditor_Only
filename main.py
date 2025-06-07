@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QListWidget, QComboBox
 )
 # 수정 후
-from PySide6.QtCore import Qt, QSize, Signal, Slot, QUrl, QSettings, QTimer
+from PySide6.QtCore import Qt, QSize, Signal, Slot, QUrl, QSettings, QTimer, QThread, QEventLoop
 from PySide6.QtGui import QAction, QIcon, QDesktopServices, QFont, QKeySequence
 
 from data_manager.db_handler_v2 import DBHandlerV2
@@ -260,6 +260,23 @@ class OriginalFileSurrogate:
         if not self.CalListSht:
             logging.warning(f"No CalList ($) sheets found for File ID: {file_id}")
 
+class ExcelImportThread(QThread):
+    finished = Signal(bool, str)
+
+    def __init__(self, importer: ExcelImporter, excel_path: str, db_path: str):
+        super().__init__()
+        self.importer = importer
+        self.excel_path = excel_path
+        self.db_path = db_path
+
+    def run(self):
+        error = ""
+        try:
+            self.importer.import_excel(self.excel_path, self.db_path)
+        except Exception as e:
+            error = str(e)
+        self.finished.emit(not error, error)
+
 
 class DBExcelEditor(QMainWindow):
     """DB 기반 Excel 뷰어/에디터 메인 클래스"""
@@ -366,6 +383,8 @@ class DBExcelEditor(QMainWindow):
                 self.db_manager.disconnect_all()
             if hasattr(self, 'db') and self.db:
                 self.db.disconnect()
+            if hasattr(self, 'importer') and self.importer:
+                self.importer.close()
         except:
             pass  # 소멸자에서는 예외를 발생시키지 않음
 
@@ -2016,9 +2035,30 @@ class DBExcelEditor(QMainWindow):
             # Excel 파일 가져오기 (사용자가 지정한 DB 파일명 전달)
             logging.info(f"Excel 파일 가져오기 시도: {file_path} -> {db_file_path}")
             self.statusBar.showMessage("Excel 파일 가져오는 중...")
-            QApplication.processEvents()  # 상태 메시지 업데이트 강제
+            progress = QProgressDialog("Excel 가져오는 중...", None, 0, 0, self)
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setMinimumDuration(0)
+            progress.show()
 
-            file_id = self.importer.import_excel(file_path, db_file_path)
+            loop = QEventLoop()
+            result = {"success": False, "error": ""}
+
+            thread = ExcelImportThread(self.importer, file_path, db_file_path)
+
+            def on_finished(success, error):
+                result["success"] = success
+                result["error"] = error
+                loop.quit()
+
+            thread.finished.connect(on_finished)
+            thread.start()
+            loop.exec()
+            progress.close()
+            thread.wait()
+
+            if not result["success"]:
+                raise Exception(result["error"])
+            file_id = 1
 
             # 파일 목록 새로고침 (파일 가져오기 후 새 데이터 표시)
             self.load_files()
@@ -2176,9 +2216,33 @@ class DBExcelEditor(QMainWindow):
 
             # Excel 파일 가져오기 (완전히 독립적으로 처리)
             logging.info(f"Excel 가져오기 시작: {excel_basename}")
-            file_id = importer.import_excel(file_path, db_file_path)
+            progress = QProgressDialog("Excel 가져오는 중...", None, 0, 0, self)
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setMinimumDuration(0)
+            progress.show()
+
+            loop = QEventLoop()
+            result = {"success": False, "error": ""}
+            thread = ExcelImportThread(importer, file_path, db_file_path)
+
+            def on_finished(success, error):
+                result["success"] = success
+                result["error"] = error
+                loop.quit()
+
+            thread.finished.connect(on_finished)
+            thread.start()
+            loop.exec()
+            progress.close()
+            thread.wait()
+
+            if not result["success"]:
+                raise Exception(result["error"])
+            file_id = 1
 
             # 가져오기 완료 후 연결 정리
+            if importer:
+                importer.close()
             if db_handler:
                 db_handler.disconnect()
                 db_handler = None
@@ -2196,10 +2260,15 @@ class DBExcelEditor(QMainWindow):
             logging.error(f"{error_msg}\n{traceback.format_exc()}")
 
             # 오류 발생 시 리소스 정리
+            if importer:
+                try:
+                    importer.close()
+                except Exception:
+                    pass
             if db_handler:
                 try:
                     db_handler.disconnect()
-                except:
+                except Exception:
                     pass
 
             return None
@@ -2223,9 +2292,30 @@ class DBExcelEditor(QMainWindow):
 
             # Excel 파일 가져오기 (단일 Excel 가져오기와 완전히 동일)
             self.statusBar.showMessage(f"Excel 파일 가져오는 중: {excel_basename}...")
-            QApplication.processEvents()
+            progress = QProgressDialog("Excel 가져오는 중...", None, 0, 0, self)
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setMinimumDuration(0)
+            progress.show()
 
-            file_id = self.importer.import_excel(file_path, db_file_path)
+            loop = QEventLoop()
+            result = {"success": False, "error": ""}
+
+            thread = ExcelImportThread(self.importer, file_path, db_file_path)
+
+            def on_finished(success, error):
+                result["success"] = success
+                result["error"] = error
+                loop.quit()
+
+            thread.finished.connect(on_finished)
+            thread.start()
+            loop.exec()
+            progress.close()
+            thread.wait()
+
+            if not result["success"]:
+                raise Exception(result["error"])
+            file_id = 1
 
             logging.info(f"자동 Excel 가져오기 완료: {excel_basename} → {default_db_name}")
 

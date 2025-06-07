@@ -27,6 +27,17 @@ class ExcelImporter:
             db_handler: V2 DB 핸들러 객체
         """
         self.db = db_handler
+        self.app = xw.App(visible=False, add_book=False)
+        self.app.display_alerts = False
+
+    def close(self):
+        """Excel 애플리케이션 종료"""
+        if getattr(self, "app", None):
+            try:
+                self.app.quit()
+            except Exception:
+                pass
+            self.app = None
 
     def import_excel(self, excel_path: str, db_file_path: str = None) -> int:
         """
@@ -41,17 +52,11 @@ class ExcelImporter:
         """
         logging.info(f"Excel 파일 가져오기 시작: {excel_path}")
 
-        app = None
         wb = None
 
         try:
             # Excel 파일 열기 (안전한 방식)
-            app = xw.App(visible=False, add_book=False)
-            app.display_alerts = False  # 경고 메시지 비활성화
-
-            logging.info(f"Excel 애플리케이션 시작 완료")
-
-            wb = app.books.open(excel_path)
+            wb = self.app.books.open(excel_path)
             logging.info(f"Excel 파일 열기 완료: {excel_path}")
 
             # 파일명 추출 (V2에서는 source_file로 사용)
@@ -166,13 +171,6 @@ class ExcelImporter:
             except Exception as wb_close_error:
                 logging.warning(f"Excel 워크북 닫기 중 오류: {wb_close_error}")
 
-            try:
-                if app:
-                    app.quit()
-                    logging.info("Excel 애플리케이션 종료 완료")
-            except Exception as app_quit_error:
-                logging.warning(f"Excel 애플리케이션 종료 중 오류: {app_quit_error}")
-
             logging.info(f"Excel 파일 가져오기 완료: {source_file_name}")
             return 1  # V2에서는 실제 파일 ID 대신 성공 표시
 
@@ -185,13 +183,7 @@ class ExcelImporter:
             try:
                 if wb:
                     wb.close()
-            except:
-                pass
-
-            try:
-                if app:
-                    app.quit()
-            except:
+            except Exception:
                 pass
 
             raise
