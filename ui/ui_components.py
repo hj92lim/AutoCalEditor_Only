@@ -27,29 +27,33 @@ class FastItemDelegate(QStyledItemDelegate):
 
     def paint(self, painter, option, index):
         """셀 렌더링 최적화"""
-        # 선택 상태 렌더링
+        # Draw background first, then set pen color based on selection
         if option.state & QStyle.State_Selected:
             painter.fillRect(option.rect, option.palette.highlight())
+            painter.setPen(option.palette.color(QPalette.HighlightedText))
         else:
-            # 이 줄 추가: 선택되지 않은 셀도 배경색 설정 (흰색 또는 기본 배경색)
             painter.fillRect(option.rect, option.palette.base())
+            painter.setPen(option.palette.color(QPalette.Text))
 
-        # 텍스트 가져오기
-        text = index.data(Qt.DisplayRole)
-        if not text:
+        # 텍스트 가져오기 및 처리
+        text_value = index.data(Qt.DisplayRole)
+
+        if text_value is None: # If data is explicitly None, nothing more to paint
             return
 
-        # 텍스트 직접 렌더링 (속도 향상)
-        painter.setPen(option.palette.color(
-            QPalette.HighlightedText if option.state & QStyle.State_Selected
-            else QPalette.Text
-        ))
+        text_to_draw = str(text_value) # Ensure it's a string for drawText
 
+        # If the string representation is empty, no need to call drawText,
+        # as the background has already been painted.
+        if not text_to_draw:
+            return
+
+        # 텍스트 직접 렌더링
         text_rect = option.rect.adjusted(self.text_margin, 0, -self.text_margin, 0)
         painter.drawText(
             text_rect,
             Qt.AlignLeft | Qt.AlignVCenter,
-            text
+            text_to_draw
         )
 
     def sizeHint(self, option, index):
