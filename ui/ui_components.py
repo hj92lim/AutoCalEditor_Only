@@ -286,9 +286,18 @@ class VirtualizedGridModel(QAbstractTableModel):
                 logging.debug(f"Removed {len(rows_to_remove)} rows from cache.")
 
         # DB에서 행 데이터 로드
-        logging.debug(f"Loading row {row} from DB for sheet {self.sheet_id}")
-        row_data = self.db.get_row_data(self.sheet_id, row)
-        self.cache[row] = row_data
+        try:
+            logging.debug(f"Loading row {row} from DB for sheet {self.sheet_id}")
+            row_data = self.db.get_row_data(self.sheet_id, row)
+            self.cache[row] = row_data
+
+            # UI 응답성 향상: 매 5행마다 이벤트 루프 처리
+            if row % 5 == 0:
+                QApplication.processEvents()
+
+        except Exception as e:
+            logging.error(f"Error loading row {row}: {e}")
+            self.cache[row] = {}  # 빈 행으로 캐시
 
     def setData(self, index, value, role=Qt.EditRole):
         if not index.isValid() or role != Qt.EditRole or self.sheet_id is None:
@@ -452,11 +461,12 @@ class VirtualizedGridModel(QAbstractTableModel):
         return None
 
     def insertRows(self, row, count, parent=QModelIndex()):
-        """모델에 행 삽입"""
+        """모델에 행 삽입 - 성능 최적화 버전"""
         if parent.isValid() or self.sheet_id is None or count <= 0:
             return False
 
         logging.debug(f"Model inserting {count} rows at {row}")
+
         # 뷰에 알림 시작 (삽입될 위치와 개수)
         self.beginInsertRows(parent, row, row + count - 1)
         try:
@@ -466,11 +476,9 @@ class VirtualizedGridModel(QAbstractTableModel):
             # 모델 내부 상태 업데이트
             self.row_count += count
 
-            # 캐시 및 수정된 셀 업데이트 (가장 간단한 방법: 전체 초기화)
-            # TODO: 더 효율적인 캐시 업데이트 방법 고려
-            self.cache = {}
-            self.modified_cells = set()
-            logging.debug(f"Cache and modified cells cleared after row insertion.")
+            # 캐시 업데이트 최적화: 영향받는 행만 조정
+            self._update_cache_after_row_insertion(row, count)
+            logging.debug(f"Cache updated efficiently after row insertion.")
 
         except Exception as e:
             logging.error(f"Error inserting rows in DB: {e}")
@@ -483,8 +491,38 @@ class VirtualizedGridModel(QAbstractTableModel):
         logging.debug(f"Model rows inserted. New row count: {self.row_count}")
         return True
 
+    def _update_cache_after_row_insertion(self, inserted_row, count):
+        """행 삽입 후 캐시 효율적 업데이트"""
+        if not self.cache:
+            return
+
+        # 삽입된 행 이후의 캐시된 행들을 아래로 이동
+        new_cache = {}
+        new_modified_cells = set()
+
+        for cached_row, row_data in self.cache.items():
+            if cached_row >= inserted_row:
+                # 삽입 위치 이후의 행들은 count만큼 아래로 이동
+                new_row = cached_row + count
+                new_cache[new_row] = row_data
+            else:
+                # 삽입 위치 이전의 행들은 그대로 유지
+                new_cache[cached_row] = row_data
+
+        # 수정된 셀 정보도 업데이트
+        for (mod_row, mod_col) in self.modified_cells:
+            if mod_row >= inserted_row:
+                new_modified_cells.add((mod_row + count, mod_col))
+            else:
+                new_modified_cells.add((mod_row, mod_col))
+
+        self.cache = new_cache
+        self.modified_cells = new_modified_cells
+
+        logging.debug(f"Cache updated: {len(new_cache)} rows, {len(new_modified_cells)} modified cells")
+
     def removeRows(self, row, count, parent=QModelIndex()):
-        """모델에서 행 삭제"""
+        """모델에서 행 삭제 - 성능 최적화 버전"""
         if parent.isValid() or self.sheet_id is None or count <= 0 or row + count > self.row_count:
             return False
 
@@ -500,10 +538,9 @@ class VirtualizedGridModel(QAbstractTableModel):
             # 모델 내부 상태 업데이트
             self.row_count -= count
 
-            # 캐시 및 수정된 셀 업데이트 (전체 초기화)
-            self.cache = {}
-            self.modified_cells = set()
-            logging.debug(f"Cache and modified cells cleared after row removal.")
+            # 캐시 업데이트 최적화: 영향받는 행만 조정
+            self._update_cache_after_row_removal(row, count)
+            logging.debug(f"Cache updated efficiently after row removal.")
 
         except Exception as e:
             logging.error(f"Error removing rows in DB: {e}")
@@ -516,8 +553,40 @@ class VirtualizedGridModel(QAbstractTableModel):
         logging.debug(f"Model rows removed. New row count: {self.row_count}")
         return True
 
+    def _update_cache_after_row_removal(self, removed_row, count):
+        """행 삭제 후 캐시 효율적 업데이트"""
+        if not self.cache:
+            return
+
+        # 삭제된 행들과 그 이후 행들의 캐시 업데이트
+        new_cache = {}
+        new_modified_cells = set()
+
+        for cached_row, row_data in self.cache.items():
+            if cached_row < removed_row:
+                # 삭제 위치 이전의 행들은 그대로 유지
+                new_cache[cached_row] = row_data
+            elif cached_row >= removed_row + count:
+                # 삭제된 행들 이후의 행들은 count만큼 위로 이동
+                new_row = cached_row - count
+                new_cache[new_row] = row_data
+            # 삭제된 행들(removed_row <= cached_row < removed_row + count)은 캐시에서 제거
+
+        # 수정된 셀 정보도 업데이트
+        for (mod_row, mod_col) in self.modified_cells:
+            if mod_row < removed_row:
+                new_modified_cells.add((mod_row, mod_col))
+            elif mod_row >= removed_row + count:
+                new_modified_cells.add((mod_row - count, mod_col))
+            # 삭제된 행의 수정 정보는 제거됨
+
+        self.cache = new_cache
+        self.modified_cells = new_modified_cells
+
+        logging.debug(f"Row cache updated: {len(new_cache)} rows, {len(new_modified_cells)} modified cells")
+
     def insertColumns(self, column, count, parent=QModelIndex()):
-        """모델에 열 삽입"""
+        """모델에 열 삽입 - 성능 최적화 버전"""
         if parent.isValid() or self.sheet_id is None or count <= 0:
             return False
 
@@ -531,10 +600,9 @@ class VirtualizedGridModel(QAbstractTableModel):
             # 모델 내부 상태 업데이트
             self.col_count += count
 
-            # 캐시 및 수정된 셀 업데이트 (전체 초기화)
-            self.cache = {}
-            self.modified_cells = set()
-            logging.debug(f"Cache and modified cells cleared after column insertion.")
+            # 캐시 업데이트 최적화: 영향받는 열만 조정
+            self._update_cache_after_column_insertion(column, count)
+            logging.debug(f"Cache updated efficiently after column insertion.")
 
         except Exception as e:
             logging.error(f"Error inserting columns in DB: {e}")
@@ -547,8 +615,37 @@ class VirtualizedGridModel(QAbstractTableModel):
         logging.debug(f"Model columns inserted. New column count: {self.col_count}")
         return True
 
+    def _update_cache_after_column_insertion(self, inserted_col, count):
+        """열 삽입 후 캐시 효율적 업데이트"""
+        if not self.cache:
+            return
+
+        # 각 행의 캐시된 데이터에서 삽입된 열 이후의 데이터를 오른쪽으로 이동
+        for row_num, row_data in self.cache.items():
+            new_row_data = {}
+            for col_num, value in row_data.items():
+                if col_num >= inserted_col:
+                    # 삽입 위치 이후의 열들은 count만큼 오른쪽으로 이동
+                    new_row_data[col_num + count] = value
+                else:
+                    # 삽입 위치 이전의 열들은 그대로 유지
+                    new_row_data[col_num] = value
+            self.cache[row_num] = new_row_data
+
+        # 수정된 셀 정보도 업데이트
+        new_modified_cells = set()
+        for (mod_row, mod_col) in self.modified_cells:
+            if mod_col >= inserted_col:
+                new_modified_cells.add((mod_row, mod_col + count))
+            else:
+                new_modified_cells.add((mod_row, mod_col))
+
+        self.modified_cells = new_modified_cells
+
+        logging.debug(f"Column cache updated: {len(self.cache)} rows, {len(new_modified_cells)} modified cells")
+
     def removeColumns(self, column, count, parent=QModelIndex()):
-        """모델에서 열 삭제"""
+        """모델에서 열 삭제 - 성능 최적화 버전"""
         if parent.isValid() or self.sheet_id is None or count <= 0 or column + count > self.col_count:
             logging.error(f"열 삭제 검증 실패: column={column}, count={count}, valid_parent={not parent.isValid()}")
             return False
@@ -565,10 +662,9 @@ class VirtualizedGridModel(QAbstractTableModel):
             # 모델 내부 상태 업데이트
             self.col_count -= count
 
-            # 캐시 및 수정된 셀 업데이트 (전체 초기화)
-            self.cache = {}
-            self.modified_cells = set()
-            logging.debug(f"Cache and modified cells cleared after column removal.")
+            # 캐시 업데이트 최적화: 영향받는 열만 조정
+            self._update_cache_after_column_removal(column, count)
+            logging.debug(f"Cache updated efficiently after column removal.")
 
         except Exception as e:
             logging.error(f"Error removing columns in DB: {e}")
@@ -580,6 +676,37 @@ class VirtualizedGridModel(QAbstractTableModel):
 
         logging.debug(f"Model columns removed. New column count: {self.col_count}")
         return True
+
+    def _update_cache_after_column_removal(self, removed_col, count):
+        """열 삭제 후 캐시 효율적 업데이트"""
+        if not self.cache:
+            return
+
+        # 각 행의 캐시된 데이터에서 삭제된 열들과 그 이후 열들의 캐시 업데이트
+        for row_num, row_data in self.cache.items():
+            new_row_data = {}
+            for col_num, value in row_data.items():
+                if col_num < removed_col:
+                    # 삭제 위치 이전의 열들은 그대로 유지
+                    new_row_data[col_num] = value
+                elif col_num >= removed_col + count:
+                    # 삭제된 열들 이후의 열들은 count만큼 왼쪽으로 이동
+                    new_row_data[col_num - count] = value
+                # 삭제된 열들(removed_col <= col_num < removed_col + count)은 캐시에서 제거
+            self.cache[row_num] = new_row_data
+
+        # 수정된 셀 정보도 업데이트
+        new_modified_cells = set()
+        for (mod_row, mod_col) in self.modified_cells:
+            if mod_col < removed_col:
+                new_modified_cells.add((mod_row, mod_col))
+            elif mod_col >= removed_col + count:
+                new_modified_cells.add((mod_row, mod_col - count))
+            # 삭제된 열의 수정 정보는 제거됨
+
+        self.modified_cells = new_modified_cells
+
+        logging.debug(f"Column cache updated: {len(self.cache)} rows, {len(new_modified_cells)} modified cells")
 class ExcelGridView(QTableView):
     """가상화된 Excel 스타일 그리드 뷰"""
 
