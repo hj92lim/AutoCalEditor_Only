@@ -965,7 +965,7 @@ class ExcelGridView(QTableView):
             self.setCurrentIndex(self.model.index(0, 0))
 
             # 뷰포트를 강제로 다시 그리도록 요청하여 검은 화면 버그 수정
-            self.viewport().update()
+            # self.viewport().update()
 
             logging.info(f"Sheet {sheet_id} loaded and view updated.")
         except Exception as e:
