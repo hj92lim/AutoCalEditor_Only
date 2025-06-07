@@ -456,46 +456,23 @@ class DBExcelEditor(QMainWindow):
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Git 작업 패널 (단순화)
+        # Git 작업 패널 (통합)
         git_panel = QWidget()
         git_layout = QHBoxLayout(git_panel)
         git_layout.setContentsMargins(5, 5, 5, 5)
 
-        # VSCode Git 작업 버튼
-        self.vscode_git_button = QPushButton("Git 작업 (VSCode)")
-        self.vscode_git_button.setToolTip("VSCode에서 Git 변경사항 확인 및 커밋")
-        self.vscode_git_button.clicked.connect(self.open_vscode_for_git)
-        self.vscode_git_button.setStyleSheet("""
-            QPushButton {
-                padding: 8px 16px;
-                font-size: 12px;
-                font-weight: bold;
-                background-color: #007ACC;
-                color: white;
-                border: none;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #005a9e;
-            }
-        """)
-
-        git_layout.addWidget(self.vscode_git_button)
-
-        # 현재 브랜치 표시
-        self.branch_label = QLabel("현재 작업 브랜치: 확인 중...")
-        self.branch_label.setStyleSheet("""
+        # Git 상태 표시 레이블 (왼쪽에 배치)
+        self.git_status_label = QLabel("Git 상태 확인 중...")
+        self.git_status_label.setStyleSheet("""
             QLabel {
-                padding: 6px 12px;
-                background-color: #f5f5f5;
-                color: #333;
-                border: 1px solid #ddd;
-                border-radius: 4px;
+                padding: 3px 8px;
+                border-radius: 3px;
                 font-size: 11px;
-                font-weight: bold;
+                background-color: #e3f2fd;
+                color: #1976d2;
             }
         """)
-        git_layout.addWidget(self.branch_label)
+        git_layout.addWidget(self.git_status_label)
 
         # Git 상태 새로고침 버튼
         self.git_refresh_button = QPushButton("↻")
@@ -521,49 +498,9 @@ class DBExcelEditor(QMainWindow):
         """)
         git_layout.addWidget(self.git_refresh_button)
 
-        # Git 상태 표시 레이블
-        self.git_status_label = QLabel("Git 상태 확인 중...")
-        self.git_status_label.setStyleSheet("""
-            QLabel {
-                padding: 3px 8px;
-                border-radius: 3px;
-                font-size: 11px;
-                background-color: #e3f2fd;
-                color: #1976d2;
-            }
-        """)
-        git_layout.addWidget(self.git_status_label)
-
-        git_layout.addStretch()  # 오른쪽 공간 확보
-        right_layout.addWidget(git_panel)
-
-        # --- 추가 Git 작업 패널 (두 번째 줄) ---
-        git_panel2 = QWidget()
-        git_layout2 = QHBoxLayout(git_panel2)
-        git_layout2.setContentsMargins(5, 5, 5, 5)
-
-        # 원격 기준 초기화 버튼
-        self.reset_to_remote_button = QPushButton("원격 기준으로 초기화")
-        self.reset_to_remote_button.setToolTip("원격 저장소 기준으로 로컬을 리셋합니다 (clean 명령어 제외)")
-        self.reset_to_remote_button.clicked.connect(self.reset_to_remote)
-        self.reset_to_remote_button.setStyleSheet("""
-            QPushButton {
-                padding: 6px 12px;
-                font-size: 11px;
-                background-color: #dc3545;
-                color: white;
-                border: none;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #c82333;
-            }
-        """)
-        git_layout2.addWidget(self.reset_to_remote_button)
-
         # 브랜치 전환 드롭다운
         branch_label = QLabel("브랜치 전환:")
-        git_layout2.addWidget(branch_label)
+        git_layout.addWidget(branch_label)
 
         self.branch_combo = QComboBox()
         self.branch_combo.setToolTip("브랜치를 선택하여 전환합니다")
@@ -576,12 +513,44 @@ class DBExcelEditor(QMainWindow):
                 border: 1px solid #ced4da;
                 border-radius: 4px;
                 background-color: white;
+                color: #333;
             }
             QComboBox:hover {
                 border-color: #80bdff;
             }
+            QComboBox::drop-down {
+                border: none;
+                background-color: #f8f9fa;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 4px solid #666;
+                margin-right: 8px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: white;
+                border: 1px solid #ced4da;
+                selection-background-color: #007bff;
+                selection-color: white;
+                color: #333;
+            }
+            QComboBox QAbstractItemView::item {
+                padding: 6px 8px;
+                border: none;
+                color: #333;
+            }
+            QComboBox QAbstractItemView::item:selected {
+                background-color: #007bff;
+                color: white;
+            }
+            QComboBox QAbstractItemView::item:hover {
+                background-color: #e3f2fd;
+                color: #1976d2;
+            }
         """)
-        git_layout2.addWidget(self.branch_combo)
+        git_layout.addWidget(self.branch_combo)
 
         # Git 변경사항 확인 버튼
         self.git_status_button = QPushButton("변경사항 확인")
@@ -600,10 +569,30 @@ class DBExcelEditor(QMainWindow):
                 background-color: #138496;
             }
         """)
-        git_layout2.addWidget(self.git_status_button)
+        git_layout.addWidget(self.git_status_button)
 
-        git_layout2.addStretch()  # 오른쪽 공간 확보
-        right_layout.addWidget(git_panel2)
+        git_layout.addStretch()  # 중간 공간 확보
+
+        # 원격 기준 초기화 버튼 (우측 상단에 배치)
+        self.reset_to_remote_button = QPushButton("원격 기준으로 초기화")
+        self.reset_to_remote_button.setToolTip("원격 저장소 기준으로 로컬을 리셋합니다 (clean 명령어 제외)")
+        self.reset_to_remote_button.clicked.connect(self.reset_to_remote)
+        self.reset_to_remote_button.setStyleSheet("""
+            QPushButton {
+                padding: 6px 12px;
+                font-size: 11px;
+                background-color: #dc3545;
+                color: white;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #c82333;
+            }
+        """)
+        git_layout.addWidget(self.reset_to_remote_button)
+
+        right_layout.addWidget(git_panel)
 
         # 현재 시트 표시 레이블
         self.sheet_label = QLabel("선택된 시트 없음")
@@ -1033,11 +1022,11 @@ class DBExcelEditor(QMainWindow):
         # --- Git 메뉴 ---
         git_menu = menu_bar.addMenu("Git(&G)")
 
-        # VSCode Git 작업 액션
-        vscode_git_action = QAction("📝 Git 작업 (VSCode)(&V)", self)
-        vscode_git_action.setStatusTip("VSCode에서 Git 변경사항 확인 및 커밋")
-        vscode_git_action.triggered.connect(self.open_vscode_for_git)
-        git_menu.addAction(vscode_git_action)
+        # Git 변경사항 확인 액션
+        git_status_action = QAction("📋 변경사항 확인(&S)", self)
+        git_status_action.setStatusTip("Git 변경사항 확인 및 커밋/푸시")
+        git_status_action.triggered.connect(self.show_git_status)
+        git_menu.addAction(git_status_action)
 
         # --- 도움말 메뉴 ---
         help_menu = menu_bar.addMenu("도움말(&H)")
@@ -4888,35 +4877,25 @@ class DBExcelEditor(QMainWindow):
         return "git"
 
     def update_branch_display(self):
-        """브랜치 표시 레이블 업데이트"""
+        """브랜치 표시 업데이트 (Git 상태 레이블에 반영)"""
         try:
             current_branch = self.get_current_branch()
-            self.branch_label.setText(f"현재 작업 브랜치: {current_branch}")
 
-            # 브랜치별 색상 구분 (선택사항)
-            if current_branch in ['main', 'master']:
-                color = "#2e7d32"  # 초록
-                bg_color = "#e8f5e8"
-            else:
-                color = "#1976d2"  # 파랑
-                bg_color = "#e3f2fd"
+            # Git 상태 레이블에 브랜치 정보 표시
+            if hasattr(self, 'git_status_label'):
+                # 브랜치별 색상 구분
+                if current_branch in ['main', 'master']:
+                    status_type = "success"
+                else:
+                    status_type = "info"
 
-            self.branch_label.setStyleSheet(f"""
-                QLabel {{
-                    padding: 6px 12px;
-                    background-color: {bg_color};
-                    color: {color};
-                    border: 1px solid {color};
-                    border-radius: 4px;
-                    font-size: 11px;
-                    font-weight: bold;
-                }}
-            """)
+                self.update_git_status(f"브랜치: {current_branch}", status_type)
 
             logging.debug(f"브랜치 표시 업데이트: {current_branch}")
         except Exception as e:
             logging.warning(f"브랜치 표시 업데이트 실패: {e}")
-            self.branch_label.setText("현재 작업 브랜치: 확인 실패")
+            if hasattr(self, 'git_status_label'):
+                self.update_git_status("브랜치 확인 실패", "error")
 
     def refresh_git_status(self):
         """Git 브랜치 정보 및 상태 새로고침"""
@@ -5005,72 +4984,11 @@ class DBExcelEditor(QMainWindow):
             QMessageBox.critical(self, "초기화 오류",
                                f"원격 기준 초기화 중 오류가 발생했습니다:\n{str(e)}")
 
-    def open_vscode_for_git(self):
-        """VSCode Git 작업 (개선된 버전)"""
-        try:
-            import subprocess
-            import shutil
-
-            # 1단계: 모든 DB 연결 닫기
-            self.statusBar.showMessage("Git 작업을 위해 DB 연결을 닫는 중...")
-            QApplication.processEvents()
-
-            if hasattr(self, 'db_manager') and self.db_manager:
-                # 모든 DB 연결 해제
-                self.db_manager.disconnect_all()
-
-                # UI 업데이트
-                self.update_current_db_references()
-                self.load_files()  # 빈 파일 목록으로 업데이트
-                self.update_db_combo()
-
-                logging.info("Git 작업을 위해 모든 DB 연결 해제 완료")
-
-            # 2단계: VSCode 실행
-            self.statusBar.showMessage("VSCode 실행 중...")
-            QApplication.processEvents()
-
-            vscode_launched = False
-
-            # 방법 1: shutil.which로 code 명령어 경로 찾기
-            code_path = shutil.which('code')
-            if code_path:
-                try:
-                    subprocess.run([code_path, '.'], cwd=self.project_root, check=True)
-                    vscode_launched = True
-                    logging.info("VSCode 실행 성공 (shutil.which)")
-                except Exception as e:
-                    logging.warning(f"shutil.which로 찾은 code 실행 실패: {e}")
-
-            # 방법 2: cmd를 통해 실행
-            if not vscode_launched:
-                try:
-                    subprocess.run(['cmd', '/c', 'code', '.'], cwd=self.project_root, check=True, shell=True)
-                    vscode_launched = True
-                    logging.info("VSCode 실행 성공 (cmd)")
-                except Exception as e:
-                    logging.warning(f"cmd를 통한 code 실행 실패: {e}")
-
-            # 3단계: 결과 표시
-            if vscode_launched:
-                self.statusBar.showMessage("VSCode 실행됨")
-                self.update_git_status("Git 작업 모드", "info")
-            else:
-                # VSCode 실행 실패 시 안내
-                QMessageBox.critical(self, "VSCode 실행 실패",
-                                   "VSCode를 실행할 수 없습니다.\n\n"
-                                   "수동으로 VSCode를 열고 현재 폴더를 열어주세요.\n"
-                                   f"현재 폴더: {self.project_root}")
-
-        except Exception as e:
-            logging.error(f"VSCode Git 작업 중 예외: {e}")
-            QMessageBox.critical(self, "오류", f"VSCode Git 작업 실행 실패: {e}")
-
     def commit_and_push_changes(self):
-        """레거시 함수 - VSCode 사용 안내"""
+        """레거시 함수 - Git 변경사항 확인 다이얼로그 사용 안내"""
         QMessageBox.information(self, "Git 작업 변경",
-                              "Git 작업은 이제 VSCode에서 진행합니다.\n"
-                              "'Git 작업 (VSCode)' 버튼을 사용해주세요.")
+                              "Git 작업은 이제 '변경사항 확인' 버튼을 사용해주세요.\n"
+                              "Git 변경사항을 확인하고 커밋/푸시할 수 있습니다.")
 
 
 
