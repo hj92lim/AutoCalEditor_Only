@@ -721,7 +721,7 @@ class DBExcelEditor(QMainWindow):
     def update_db_combo(self):
         """DB 선택 드롭다운 업데이트"""
         try:
-            logging.debug("DB 드롭다운 업데이트 시작")
+            logging.info("🔄 DB 드롭다운 업데이트 시작")
 
             # 시그널 일시 차단 (무한 루프 방지)
             self.db_combo.blockSignals(True)
@@ -733,12 +733,12 @@ class DBExcelEditor(QMainWindow):
                 self.db_combo.addItem("DB가 열려있지 않음")
                 self.db_combo.setEnabled(False)
                 self.close_db_button.setEnabled(False)
-                logging.debug("DB가 없어서 비활성화 상태로 설정")
+                logging.info("🔄 DB가 없어서 비활성화 상태로 설정")
                 return
 
             # DB 목록 추가
             db_names = self.db_manager.get_database_names()
-            logging.debug(f"DB 목록: {db_names}")
+            logging.info(f"🔄 DB 목록 ({len(db_names)}개): {db_names}")
 
             for db_name in db_names:
                 # DB 이름과 파일 경로 힌트 표시
@@ -747,10 +747,10 @@ class DBExcelEditor(QMainWindow):
                     file_path = db_handler.db_file  # 올바른 속성 이름 사용
                     display_text = f"{db_name} ({os.path.basename(file_path)})"
                     self.db_combo.addItem(display_text, db_name)  # 실제 DB 이름을 데이터로 저장
-                    logging.debug(f"DB 추가: {display_text} -> {db_name}")
+                    logging.info(f"🔄 DB 추가: {display_text} -> {db_name}")
                 else:
                     self.db_combo.addItem(db_name, db_name)
-                    logging.debug(f"DB 추가 (경로 없음): {db_name}")
+                    logging.info(f"🔄 DB 추가 (경로 없음): {db_name}")
 
             # 현재 활성 DB 선택
             current_db_name = self.db_manager.current_db_name
@@ -758,15 +758,15 @@ class DBExcelEditor(QMainWindow):
                 for i in range(self.db_combo.count()):
                     if self.db_combo.itemData(i) == current_db_name:
                         self.db_combo.setCurrentIndex(i)
-                        logging.debug(f"현재 활성 DB 선택: {current_db_name} (인덱스 {i})")
+                        logging.info(f"🔄 현재 활성 DB 선택: {current_db_name} (인덱스 {i})")
                         break
                 else:
-                    logging.warning(f"현재 활성 DB '{current_db_name}'를 드롭다운에서 찾을 수 없음")
+                    logging.warning(f"🔄 현재 활성 DB '{current_db_name}'를 드롭다운에서 찾을 수 없음")
 
             self.db_combo.setEnabled(True)
             self.close_db_button.setEnabled(True)
 
-            logging.debug(f"DB 드롭다운 업데이트 완료: {self.db_combo.count()}개 항목")
+            logging.info(f"🔄 DB 드롭다운 업데이트 완료: {self.db_combo.count()}개 항목, 활성 DB: {current_db_name}")
 
         except Exception as e:
             logging.error(f"DB 드롭다운 업데이트 중 오류: {e}")
@@ -904,17 +904,18 @@ class DBExcelEditor(QMainWindow):
 
         file_menu.addSeparator()
 
-        import_action = QAction("Excel 가져오기(&I)...", self)
+        import_action = QAction(Info.EXCEL_TO_DB_MENU_TEXT, self)
         import_action.setShortcut(QKeySequence("Ctrl+I"))  # 단축키 변경 (기존 Open과 충돌하지 않도록)
-        import_action.setStatusTip("Excel 파일을 데이터베이스로 가져옵니다 (다중 선택 지원)")
+        import_action.setStatusTip(Info.EXCEL_TO_DB_STATUS_TIP)
         import_action.triggered.connect(self.import_excel_file)
         file_menu.addAction(import_action)
 
-        export_action = QAction("Excel 내보내기(&E)...", self)
-        export_action.setShortcut(QKeySequence("Ctrl+Shift+E"))  # 충돌 없는 단축키 사용
-        export_action.setStatusTip("현재 선택된 파일을 Excel 파일로 내보냅니다.")
-        export_action.triggered.connect(self.export_to_excel)
-        file_menu.addAction(export_action)
+        # Excel 내보내기 기능 임시 비활성화 (향후 재활성화를 위해 주석 처리)
+        # export_action = QAction("Excel 내보내기(&E)...", self)
+        # export_action.setShortcut(QKeySequence("Ctrl+Shift+E"))  # 충돌 없는 단축키 사용
+        # export_action.setStatusTip("현재 선택된 파일을 Excel 파일로 내보냅니다.")
+        # export_action.triggered.connect(self.export_to_excel)
+        # file_menu.addAction(export_action)
 
         file_menu.addSeparator()
 
@@ -1089,7 +1090,7 @@ class DBExcelEditor(QMainWindow):
                 <h4 style="color: #2c3e50; font-size: 12pt; margin-bottom: 10px;">주요 기능</h4>
                 <ul style="font-size: 10pt; color: #495057; line-height: 1.6;">
                     <li>SQLite 데이터베이스 기반 Cal 데이터 관리</li>
-                    <li>Excel 파일 가져오기/내보내기 지원</li>
+                    <li>Excel → DB 변환 지원</li>
                     <li>실시간 데이터 편집 및 검증</li>
                     <li>자동 C/H 코드 생성 및 관리</li>
                     <li>Git 기반 버전 관리 통합</li>
@@ -2062,7 +2063,7 @@ class DBExcelEditor(QMainWindow):
         result_dialog.exec()
 
     def import_excel_file(self):
-        """Excel 파일 가져오기 (다중 선택 자동 지원)"""
+        """Excel 파일을 DB로 변환 (다중 선택 자동 지원)"""
         try:
             # 다중 파일 선택 대화상자
             file_paths, _ = QFileDialog.getOpenFileNames(
@@ -2085,10 +2086,10 @@ class DBExcelEditor(QMainWindow):
                 self.process_multiple_excel_files_simple(file_paths)
 
         except Exception as e:
-            error_msg = f"Excel 파일 가져오기 중 오류 발생: {str(e)}"
+            error_msg = f"Excel → DB 변환 중 오류 발생: {str(e)}"
             logging.error(f"{error_msg}\n{traceback.format_exc()}")
-            QMessageBox.critical(self, "가져오기 오류", error_msg)
-            self.statusBar.showMessage("Excel 파일 가져오기 실패")
+            QMessageBox.critical(self, "변환 오류", error_msg)
+            self.statusBar.showMessage("Excel → DB 변환 실패")
 
     def process_single_excel_import(self, file_path):
         """단일 Excel 파일 가져오기 처리"""
@@ -2111,32 +2112,32 @@ class DBExcelEditor(QMainWindow):
             self.last_directory = os.path.dirname(db_file_path)
             self.settings.setValue(Info.LAST_DIRECTORY_KEY, self.last_directory)
 
-            # Excel 가져오기용 새 DB 생성 및 연결
-            if not self.setup_new_db_connection(db_file_path, "가져오기"):
+            # Excel → DB 변환용 새 DB 생성 및 연결
+            if not self.setup_new_db_connection(db_file_path, "변환"):
                 return  # DB 생성 실패
 
-            # Excel 파일 가져오기 (사용자가 지정한 DB 파일명 전달)
-            logging.info(f"Excel 파일 가져오기 시도: {file_path} -> {db_file_path}")
-            self.statusBar.showMessage("Excel 파일 가져오는 중...")
+            # Excel 파일을 DB로 변환 (사용자가 지정한 DB 파일명 전달)
+            logging.info(f"Excel → DB 변환 시도: {file_path} -> {db_file_path}")
+            self.statusBar.showMessage("Excel 파일을 DB로 변환 중...")
             QApplication.processEvents()  # 상태 메시지 업데이트 강제
 
             file_id = self.importer.import_excel(file_path, db_file_path)
 
-            # 파일 목록 새로고침 (파일 가져오기 후 새 데이터 표시)
+            # 파일 목록 새로고침 (파일 변환 후 새 데이터 표시)
             self.load_files()
 
             # DB 드롭다운 업데이트
             self.update_db_combo()
 
-            self.statusBar.showMessage(f"Excel 파일 가져오기 완료: {os.path.basename(file_path)} → {os.path.basename(db_file_path)}")
-            QMessageBox.information(self, "가져오기 완료",
-                                  f"'{os.path.basename(file_path)}' 파일을 '{os.path.basename(db_file_path)}' 데이터베이스로 성공적으로 가져왔습니다.")
+            self.statusBar.showMessage(f"Excel → DB 변환 완료: {os.path.basename(file_path)} → {os.path.basename(db_file_path)}")
+            QMessageBox.information(self, "변환 완료",
+                                  f"'{os.path.basename(file_path)}' 파일을 '{os.path.basename(db_file_path)}' 데이터베이스로 성공적으로 변환했습니다.")
 
         except Exception as e:
-            error_msg = f"Excel 파일 가져오기 중 오류 발생: {str(e)}"
+            error_msg = f"Excel → DB 변환 중 오류 발생: {str(e)}"
             logging.error(f"{error_msg}\n{traceback.format_exc()}")
-            QMessageBox.critical(self, "가져오기 오류", error_msg)
-            self.statusBar.showMessage("Excel 파일 가져오기 실패")
+            QMessageBox.critical(self, "변환 오류", error_msg)
+            self.statusBar.showMessage("Excel → DB 변환 실패")
 
     def process_multiple_excel_files_simple(self, file_paths):
         """다중 Excel 파일 처리 (단일 함수 반복 호출 방식 - 안정성 개선)"""
@@ -2151,7 +2152,8 @@ class DBExcelEditor(QMainWindow):
 
             # 진행률 대화상자 생성
             from PySide6.QtWidgets import QProgressDialog
-            progress = QProgressDialog("다중 Excel 파일 가져오기 중...", "취소", 0, len(file_paths), self)
+            progress = QProgressDialog("다중 Excel 파일을 DB로 변환 중...", "취소", 0, len(file_paths), self)
+            progress.setWindowTitle(Info.EXCEL_TO_DB_MULTI_PROGRESS_TITLE)
             progress.setWindowModality(Qt.WindowModal)
             progress.setMinimumDuration(0)
             progress.show()
@@ -2172,14 +2174,14 @@ class DBExcelEditor(QMainWindow):
                     break
 
                 excel_basename = os.path.basename(file_path)
-                progress.setLabelText(f"가져오기 중: {excel_basename}")
+                progress.setLabelText(f"변환 중: {excel_basename}")
                 progress.setValue(i)
                 QApplication.processEvents()
 
                 try:
-                    logging.info(f"다중 Excel 가져오기 [{i+1}/{len(file_paths)}]: {file_path}")
+                    logging.info(f"다중 Excel → DB 변환 [{i+1}/{len(file_paths)}]: {file_path}")
 
-                    # 각 파일을 독립적으로 처리 (단일 파일 가져오기와 동일한 방식)
+                    # 각 파일을 독립적으로 처리 (단일 파일 변환과 동일한 방식)
                     result = self.process_single_excel_import_isolated(file_path, save_directory)
 
                     if result:
@@ -2188,11 +2190,11 @@ class DBExcelEditor(QMainWindow):
                             'db_file': result['db_file'],
                             'db_path': result['db_path']
                         })
-                        logging.info(f"다중 Excel 가져오기 성공: {excel_basename}")
+                        logging.info(f"다중 Excel → DB 변환 성공: {excel_basename}")
                     else:
                         failed_imports.append({
                             'excel_file': excel_basename,
-                            'error': '가져오기 실패'
+                            'error': '변환 실패'
                         })
 
                 except Exception as e:
@@ -2201,7 +2203,7 @@ class DBExcelEditor(QMainWindow):
                         'excel_file': excel_basename,
                         'error': error_msg
                     })
-                    logging.error(f"다중 Excel 가져오기 실패 [{excel_basename}]: {error_msg}")
+                    logging.error(f"다중 Excel → DB 변환 실패 [{excel_basename}]: {error_msg}")
                     import traceback
                     logging.error(f"상세 오류: {traceback.format_exc()}")
 
@@ -2223,23 +2225,26 @@ class DBExcelEditor(QMainWindow):
             # 파일 목록 새로고침
             self.load_files()
 
+            # DB 드롭다운 업데이트 (중요: UI 동기화)
+            self.update_db_combo()
+
             # 결과 메시지
             if failed_imports:
-                self.statusBar.showMessage(f"다중 Excel 가져오기 완료: 성공 {len(successful_imports)}개, 실패 {len(failed_imports)}개")
-                QMessageBox.information(self, "다중 Excel 가져오기 완료",
+                self.statusBar.showMessage(f"다중 Excel → DB 변환 완료: 성공 {len(successful_imports)}개, 실패 {len(failed_imports)}개")
+                QMessageBox.information(self, "다중 Excel → DB 변환 완료",
                                       f"총 {len(file_paths)}개 파일 중 {len(successful_imports)}개 성공, {len(failed_imports)}개 실패\n"
                                       f"저장 위치: {save_directory}")
             else:
-                self.statusBar.showMessage(f"다중 Excel 가져오기 완료: 모든 {len(successful_imports)}개 파일 성공")
-                QMessageBox.information(self, "다중 Excel 가져오기 완료",
-                                      f"모든 {len(successful_imports)}개 Excel 파일을 성공적으로 가져왔습니다.\n"
+                self.statusBar.showMessage(f"다중 Excel → DB 변환 완료: 모든 {len(successful_imports)}개 파일 성공")
+                QMessageBox.information(self, "다중 Excel → DB 변환 완료",
+                                      f"모든 {len(successful_imports)}개 Excel 파일을 성공적으로 DB로 변환했습니다.\n"
                                       f"저장 위치: {save_directory}")
 
         except Exception as e:
-            error_msg = f"다중 Excel 파일 가져오기 중 오류 발생: {str(e)}"
+            error_msg = f"다중 Excel → DB 변환 중 오류 발생: {str(e)}"
             logging.error(f"{error_msg}\n{traceback.format_exc()}")
-            QMessageBox.critical(self, "다중 가져오기 오류", error_msg)
-            self.statusBar.showMessage("다중 Excel 파일 가져오기 실패")
+            QMessageBox.critical(self, "다중 변환 오류", error_msg)
+            self.statusBar.showMessage("다중 Excel → DB 변환 실패")
 
     def process_single_excel_import_isolated(self, file_path, save_directory):
         """
@@ -2268,24 +2273,24 @@ class DBExcelEditor(QMainWindow):
                 default_db_name = f"{excel_filename_only}_{counter}.db"
                 counter += 1
 
-            logging.info(f"독립적 Excel 가져오기: {file_path} → {db_file_path}")
+            logging.info(f"독립적 Excel → DB 변환: {file_path} → {db_file_path}")
 
             # 새로운 독립적인 DB 핸들러 생성 (기존 연결과 분리)
             db_handler = DBHandlerV2(db_file_path)
 
-            # 새로운 독립적인 Excel 가져오기 객체 생성
+            # 새로운 독립적인 Excel 변환 객체 생성
             importer = ExcelImporter(db_handler)
 
-            # Excel 파일 가져오기 (완전히 독립적으로 처리)
-            logging.info(f"Excel 가져오기 시작: {excel_basename}")
+            # Excel 파일을 DB로 변환 (완전히 독립적으로 처리)
+            logging.info(f"Excel → DB 변환 시작: {excel_basename}")
             file_id = importer.import_excel(file_path, db_file_path)
 
-            # 가져오기 완료 후 연결 정리
+            # 변환 완료 후 연결 정리
             if db_handler:
                 db_handler.disconnect()
                 db_handler = None
 
-            logging.info(f"독립적 Excel 가져오기 완료: {excel_basename} → {default_db_name}")
+            logging.info(f"독립적 Excel → DB 변환 완료: {excel_basename} → {default_db_name}")
 
             return {
                 'db_file': default_db_name,
@@ -2294,7 +2299,7 @@ class DBExcelEditor(QMainWindow):
             }
 
         except Exception as e:
-            error_msg = f"독립적 Excel 파일 가져오기 중 오류 발생: {str(e)}"
+            error_msg = f"독립적 Excel → DB 변환 중 오류 발생: {str(e)}"
             logging.error(f"{error_msg}\n{traceback.format_exc()}")
 
             # 오류 발생 시 리소스 정리
@@ -2359,7 +2364,8 @@ class DBExcelEditor(QMainWindow):
 
             # 진행률 대화상자 생성
             from PySide6.QtWidgets import QProgressDialog
-            progress = QProgressDialog("Excel 파일 가져오기 중...", "취소", 0, len(file_paths), self)
+            progress = QProgressDialog("Excel 파일을 DB로 변환 중...", "취소", 0, len(file_paths), self)
+            progress.setWindowTitle(Info.EXCEL_TO_DB_MULTI_PROGRESS_TITLE)
             progress.setWindowModality(Qt.WindowModal)
             progress.setMinimumDuration(0)
             progress.show()
@@ -2425,16 +2431,19 @@ class DBExcelEditor(QMainWindow):
             # 파일 목록 새로고침
             self.load_files()
 
+            # DB 드롭다운 업데이트 (중요: UI 동기화)
+            self.update_db_combo()
+
             # 간단한 결과 메시지
             if failed_imports:
-                self.statusBar.showMessage(f"다중 Excel 가져오기 완료: 성공 {len(successful_imports)}개, 실패 {len(failed_imports)}개")
-                QMessageBox.information(self, "다중 Excel 가져오기 완료",
+                self.statusBar.showMessage(f"다중 Excel → DB 변환 완료: 성공 {len(successful_imports)}개, 실패 {len(failed_imports)}개")
+                QMessageBox.information(self, "다중 Excel → DB 변환 완료",
                                       f"총 {len(file_paths)}개 파일 중 {len(successful_imports)}개 성공, {len(failed_imports)}개 실패\n"
                                       f"저장 위치: {save_directory}")
             else:
-                self.statusBar.showMessage(f"다중 Excel 가져오기 완료: 모든 {len(successful_imports)}개 파일 성공")
-                QMessageBox.information(self, "다중 Excel 가져오기 완료",
-                                      f"모든 {len(successful_imports)}개 Excel 파일을 성공적으로 가져왔습니다.\n"
+                self.statusBar.showMessage(f"다중 Excel → DB 변환 완료: 모든 {len(successful_imports)}개 파일 성공")
+                QMessageBox.information(self, "다중 Excel → DB 변환 완료",
+                                      f"모든 {len(successful_imports)}개 Excel 파일을 성공적으로 DB로 변환했습니다.\n"
                                       f"저장 위치: {save_directory}")
 
         except Exception as e:
@@ -2447,6 +2456,8 @@ class DBExcelEditor(QMainWindow):
         """성공적으로 가져온 DB들을 DBManager에 추가"""
         try:
             added_count = 0
+            last_added_db_name = None
+
             for import_info in successful_imports:
                 db_path = import_info['db_path']
                 try:
@@ -2463,9 +2474,15 @@ class DBExcelEditor(QMainWindow):
                         db_name = self.db_manager.add_database(db_path, replace_existing=False)
                         logging.info(f"DBManager에 추가됨: {db_name} ({db_path})")
                         added_count += 1
+                        last_added_db_name = db_name  # 마지막 추가된 DB 기록
 
                 except Exception as e:
                     logging.warning(f"DBManager 추가 실패: {db_path} - {e}")
+
+            # 마지막으로 추가된 DB를 현재 활성 DB로 설정
+            if last_added_db_name:
+                self.db_manager.switch_database(last_added_db_name)
+                logging.info(f"마지막 추가된 DB를 활성 DB로 설정: {last_added_db_name}")
 
             # 현재 DB 참조 업데이트
             self.update_current_db_references()
@@ -2485,6 +2502,9 @@ class DBExcelEditor(QMainWindow):
         try:
             # 파일 목록 새로고침 (모든 DB의 파일들 표시)
             self.load_files()
+
+            # DB 드롭다운 업데이트 (중요: 이 부분이 누락되어 있었음)
+            self.update_db_combo()
 
             # 상태바에 DB 개수 표시
             db_count = self.db_manager.get_database_count()
@@ -2506,9 +2526,9 @@ class DBExcelEditor(QMainWindow):
 
 
     def show_multiple_import_result(self, successful_imports, failed_imports):
-        """다중 Excel 가져오기 결과 표시"""
+        """다중 Excel → DB 변환 결과 표시"""
         result_dialog = QDialog(self)
-        result_dialog.setWindowTitle("다중 Excel 가져오기 결과")
+        result_dialog.setWindowTitle("다중 Excel → DB 변환 결과")
         result_dialog.setMinimumSize(500, 400)
 
         layout = QVBoxLayout(result_dialog)
@@ -2559,14 +2579,19 @@ class DBExcelEditor(QMainWindow):
 
         # 상태바 업데이트
         if failed_imports:
-            self.statusBar.showMessage(f"다중 가져오기 완료: 성공 {len(successful_imports)}개, 실패 {len(failed_imports)}개")
+            self.statusBar.showMessage(f"다중 변환 완료: 성공 {len(successful_imports)}개, 실패 {len(failed_imports)}개")
         else:
-            self.statusBar.showMessage(f"다중 가져오기 완료: 모든 {len(successful_imports)}개 파일 성공")
+            self.statusBar.showMessage(f"다중 변환 완료: 모든 {len(successful_imports)}개 파일 성공")
 
         result_dialog.exec()
 
     def export_to_excel(self):
-        """현재 선택된 파일을 Excel로 내보내기"""
+        """
+        현재 선택된 파일을 Excel로 내보내기
+
+        주의: 이 기능은 현재 임시로 비활성화되어 있습니다.
+        메뉴에서 접근할 수 없지만 코드는 향후 재활성화를 위해 보존됩니다.
+        """
         if self.current_file_id is None:
             QMessageBox.warning(self, "내보내기 경고", "내보낼 파일을 먼저 선택해주세요.")
             return

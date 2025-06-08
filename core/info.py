@@ -86,6 +86,12 @@ class Info:
     EXCEL_FILE_FILTER = f"Excel 파일 (*{EXCEL_EXTENSIONS[0]} *{EXCEL_EXTENSIONS[1]})"
     CSV_FILE_FILTER = f"CSV 파일 (*{CSV_EXTENSION})"
 
+    # UI 텍스트 상수
+    EXCEL_TO_DB_MENU_TEXT = "Excel → DB 변환(&I)..."
+    EXCEL_TO_DB_STATUS_TIP = "Excel 파일을 SQLite 데이터베이스로 변환합니다 (다중 선택 지원)"
+    EXCEL_TO_DB_PROGRESS_TITLE = "Excel to DB Conversion"
+    EXCEL_TO_DB_MULTI_PROGRESS_TITLE = "Converting Multiple Excel Files"
+
     MaxFileNum = 10  # 최대 파일 생성 갯수
     PrjtDefCol = 2   # 프로젝트/단계 define 명 col 위치(프로젝트명 + PrjtDefCol)
     PrjtNameCol = 5  # 프로젝트/단계 define 명 col 위치(프로젝트명 + PrjtNameCol)
