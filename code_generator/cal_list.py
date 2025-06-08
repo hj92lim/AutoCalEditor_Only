@@ -9,13 +9,13 @@ try:
     from core.performance_settings import (
         ENABLE_FLOAT_SUFFIX,
         USE_CYTHON_CAL_LIST,
-        USE_CYTHON_CODE_GEN
+        # USE_CYTHON_CODE_GEN # Vulture: unused
     )
 except ImportError as e:
     logging.warning(f"성능 설정 import 실패, 기본값 사용: {e}")
     ENABLE_FLOAT_SUFFIX = True
     USE_CYTHON_CAL_LIST = True
-    USE_CYTHON_CODE_GEN = True
+    # USE_CYTHON_CODE_GEN = True # Fallback for unused import
 
 # Cython 모듈 안전 import
 CYTHON_CODE_GEN_AVAILABLE = False
@@ -639,35 +639,6 @@ class CalList:
 
         # 2차원 배열 확인
         is_2d_array = self.dArr[self.currentArr].OrignalSize.Row > 1
-
-        # Cython 최적화 사용 (배열 멤버 읽기) - 04_Python_Migration 방식
-        if False:  # USE_CYTHON_CAL_LIST - 임시 비활성화 (04_Python_Migration과 동일)
-            try:
-                temp_line, alignment_sizes = fast_read_arr_mem_processing(
-                    self.shtData,
-                    row,
-                    self.dArr[self.currentArr].StartPos.Col,
-                    self.dArr[self.currentArr].EndPos.Col,
-                    Info.ReadingXlsRule
-                )
-
-                # Alignment 크기 업데이트
-                for i, size in enumerate(alignment_sizes):
-                    temp_col_pos = i
-                    if self.dArr[self.currentArr].ArrType == EArrType.Type3.value:
-                        temp_col_pos %= 10
-
-                    # AlignmentSize 리스트 확장
-                    while temp_col_pos >= len(self.dArr[self.currentArr].AlignmentSize):
-                        self.dArr[self.currentArr].AlignmentSize.append(0)
-
-                    if size > self.dArr[self.currentArr].AlignmentSize[temp_col_pos]:
-                        self.dArr[self.currentArr].AlignmentSize[temp_col_pos] = size
-
-            except:
-                # Python 폴백
-                temp_line = []
-                col = self.dArr[self.currentArr].StartPos.Col
 
         # 기존 Python 버전 (폴백)
         while col < self.dArr[self.currentArr].EndPos.Col + 1:
