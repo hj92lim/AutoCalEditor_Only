@@ -4350,18 +4350,15 @@ class DBExcelEditor(QMainWindow):
         # 결과 텍스트 생성
         result_content = []
 
-        # 성공한 DB들
+        # 성공한 DB들 (헤더 없이 바로 표시)
         if successful_generations:
-            result_content.append("성공한 DB:")
-            result_content.append("=" * 50)
-
             for gen_info in successful_generations:
                 db_name = gen_info['db_name']
                 generated_files = gen_info.get('generated_files', [])
                 output_path = gen_info['output_dir']
 
-                # DB명 대신 저장 위치를 메인 제목으로 사용
-                result_content.append(f"\n📂 저장 위치: {os.path.basename(output_path)}")
+                # DB명과 저장 위치를 함께 표시 (출처 정보 포함)
+                result_content.append(f"📂 저장 위치: {os.path.basename(output_path)} (출처: {db_name})")
 
                 if generated_files:
                     result_content.append("   생성된 파일:")
@@ -4384,24 +4381,23 @@ class DBExcelEditor(QMainWindow):
 
                 result_content.append("")
 
-        # 실패한 DB들
+        # 실패한 DB들 (헤더 없이 바로 표시)
         if failed_generations:
+            # 성공한 DB와 실패한 DB 사이에 구분선 추가
             if successful_generations:
-                result_content.append("\n")
-
-            result_content.append("실패한 DB:")
-            result_content.append("=" * 50)
+                result_content.append("=" * 50)
+                result_content.append("")
 
             for fail_info in failed_generations:
                 db_name = fail_info['db_name']
                 error_msg = fail_info['error']
                 output_path = fail_info.get('output_dir', 'N/A')
 
-                # DB명 대신 저장 위치를 메인 제목으로 사용 (실패한 경우)
+                # 실패한 DB 정보 표시
                 if output_path != 'N/A':
-                    result_content.append(f"\n📂 저장 위치: {os.path.basename(output_path)}")
+                    result_content.append(f"❌ 실패: {os.path.basename(output_path)} (출처: {db_name})")
                 else:
-                    result_content.append(f"\n📂 {db_name} (경로 없음)")
+                    result_content.append(f"❌ 실패: {db_name}")
                 result_content.append(f"   오류: {error_msg}")
                 result_content.append("")
 
