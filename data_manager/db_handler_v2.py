@@ -122,27 +122,66 @@ class DBHandlerV2:
             raise
 
     def create_sheet_v2(self, sheet_name: str, is_dollar_sheet: bool = False,
-                       sheet_order: int = 0, source_file: str = None) -> int:
+                       sheet_order: int = 0, source_file: str = None,
+                       replace_if_exists: bool = True) -> int:
         """
-        시트 생성
+        시트 생성 (중복 처리 로직 포함)
 
         Args:
             sheet_name: 시트 이름
             is_dollar_sheet: $ 마크 포함 여부
             sheet_order: 시트 순서
             source_file: 원본 파일명 (선택사항)
+            replace_if_exists: 기존 시트가 있을 경우 교체 여부 (기본값: True)
 
         Returns:
             생성된 시트 ID
         """
         try:
+            # 기존 시트 존재 여부 확인
+            existing_sheet = self.get_sheet_by_name(sheet_name)
+
+            if existing_sheet:
+                if replace_if_exists:
+                    # 기존 시트 삭제 후 재생성
+                    logging.info(f"기존 시트 '{sheet_name}' 발견, 교체 진행")
+                    self.delete_sheet(existing_sheet['id'])
+                else:
+                    # 기존 시트 ID 반환
+                    logging.info(f"기존 시트 '{sheet_name}' 사용 (ID: {existing_sheet['id']})")
+                    return existing_sheet['id']
+
+            # 새 시트 생성
             self.cursor.execute(
                 '''INSERT INTO sheets (name, is_dollar_sheet, sheet_order, source_file)
                    VALUES (?, ?, ?, ?)''',
                 (sheet_name, 1 if is_dollar_sheet else 0, sheet_order, source_file)
             )
             self.conn.commit()
-            return self.cursor.lastrowid
+            sheet_id = self.cursor.lastrowid
+            logging.info(f"새 시트 '{sheet_name}' 생성 완료 (ID: {sheet_id})")
+            return sheet_id
+
+        except sqlite3.IntegrityError as e:
+            if "UNIQUE constraint failed: sheets.name" in str(e):
+                # UNIQUE constraint 오류 처리
+                logging.error(f"시트명 중복 오류: '{sheet_name}' - 기존 시트가 존재합니다")
+                if replace_if_exists:
+                    # 재시도: 기존 시트 강제 삭제 후 재생성
+                    try:
+                        existing_sheet = self.get_sheet_by_name(sheet_name)
+                        if existing_sheet:
+                            logging.info(f"UNIQUE constraint 오류 복구: 기존 시트 '{sheet_name}' 삭제 후 재생성")
+                            self.delete_sheet(existing_sheet['id'])
+                            return self.create_sheet_v2(sheet_name, is_dollar_sheet, sheet_order, source_file, False)
+                    except Exception as retry_error:
+                        logging.error(f"시트 재생성 실패: {retry_error}")
+                        raise
+                raise
+            else:
+                logging.error(f"시트 생성 중 무결성 오류: {e}")
+                self.conn.rollback()
+                raise
         except Exception as e:
             logging.error(f"시트 생성 오류: {e}")
             self.conn.rollback()
@@ -195,6 +234,35 @@ class DBHandlerV2:
             logging.error(f"시트 조회 오류: {e}")
             raise
 
+    def get_sheet_by_name(self, sheet_name: str) -> Optional[Dict[str, Any]]:
+        """
+        시트명으로 시트 정보 조회
+
+        Args:
+            sheet_name: 조회할 시트 이름
+
+        Returns:
+            시트 정보 딕셔너리 (없으면 None)
+        """
+        try:
+            self.cursor.execute(
+                '''SELECT id, name, is_dollar_sheet, sheet_order, source_file
+                   FROM sheets WHERE name = ?''', (sheet_name,)
+            )
+            row = self.cursor.fetchone()
+            if row:
+                return {
+                    'id': row[0],
+                    'name': row[1],
+                    'is_dollar_sheet': bool(row[2]),
+                    'order': row[3],
+                    'source_file': row[4]
+                }
+            return None
+        except Exception as e:
+            logging.error(f"시트명 조회 오류 ('{sheet_name}'): {e}")
+            return None
+
     def rename_sheet(self, sheet_id: int, new_name: str, is_dollar_sheet: bool = None):
         """
         시트 이름 변경
@@ -227,6 +295,44 @@ class DBHandlerV2:
             self.conn.commit()
         except Exception as e:
             logging.error(f"시트 삭제 오류: {e}")
+            self.conn.rollback()
+            raise
+
+    def delete_sheets_by_source_file(self, source_file: str) -> int:
+        """
+        특정 source_file의 모든 시트 삭제
+
+        Args:
+            source_file: 원본 파일명
+
+        Returns:
+            삭제된 시트 개수
+        """
+        try:
+            # 삭제할 시트 목록 조회
+            self.cursor.execute(
+                "SELECT id, name FROM sheets WHERE source_file = ?",
+                (source_file,)
+            )
+            sheets_to_delete = self.cursor.fetchall()
+
+            if not sheets_to_delete:
+                logging.info(f"삭제할 시트가 없습니다 (source_file: '{source_file}')")
+                return 0
+
+            # 시트들 삭제 (CASCADE로 연관된 셀 데이터도 자동 삭제)
+            self.cursor.execute("DELETE FROM sheets WHERE source_file = ?", (source_file,))
+            deleted_count = self.cursor.rowcount
+            self.conn.commit()
+
+            logging.info(f"source_file '{source_file}'의 {deleted_count}개 시트 삭제 완료")
+            for sheet in sheets_to_delete:
+                logging.debug(f"  - 삭제된 시트: '{sheet[1]}' (ID: {sheet[0]})")
+
+            return deleted_count
+
+        except Exception as e:
+            logging.error(f"source_file 시트 삭제 오류 ('{source_file}'): {e}")
             self.conn.rollback()
             raise
 
@@ -302,7 +408,7 @@ class DBHandlerV2:
 
                 # 배치 데이터 처리 - Cython 최적화 활성화
                 try:
-                    from data_processor import fast_sheet_data_loading
+                    from cython_extensions.data_processor import fast_sheet_data_loading
                     # 배치를 Cython으로 빠르게 처리
                     batch_dict = [{'row': cell['row'], 'col': cell['col'], 'value': cell['value']} for cell in batch]
                     temp_sheet = fast_sheet_data_loading(batch_dict, max_row, max_col)

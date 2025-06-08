@@ -66,6 +66,14 @@ class ExcelImporter:
             # V2 방식: source_file 이름만 저장 (실제 파일 ID는 사용하지 않음)
             source_file = source_file_name
 
+            # 기존 동일한 source_file의 시트들 정리 (중복 방지)
+            try:
+                deleted_count = self.db.delete_sheets_by_source_file(source_file_name)
+                if deleted_count > 0:
+                    logging.info(f"기존 '{source_file_name}' 시트 {deleted_count}개 정리 완료")
+            except Exception as cleanup_error:
+                logging.warning(f"기존 시트 정리 중 오류 (계속 진행): {cleanup_error}")
+
             # 모든 시트 확인
             total_sheets = len(wb.sheets)
             dollar_sheets_count = 0
@@ -82,12 +90,13 @@ class ExcelImporter:
                     logging.info(f"$ 시트 발견 [{dollar_sheets_count}]: '{sheet_name}' 가져오기 시작")
 
                     try:
-                        # V2 방식으로 시트 생성
+                        # V2 방식으로 시트 생성 (중복 시 교체)
                         sheet_id = self.db.create_sheet_v2(
                             sheet_name,
                             is_dollar_sheet=True,
                             sheet_order=sheet_idx,
-                            source_file=source_file_name
+                            source_file=source_file_name,
+                            replace_if_exists=True
                         )
                         logging.info(f"시트 '{sheet_name}' DB 생성 완료 (ID: {sheet_id})")
 
