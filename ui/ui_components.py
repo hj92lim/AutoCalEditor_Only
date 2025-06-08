@@ -1982,16 +1982,12 @@ class TreeView(QTreeView):
         if item_type == "file":
             # 파일 메뉴 항목
             rename_action = menu.addAction(f"'{item_name}' 이름 수정")
-            delete_action = menu.addAction("파일 삭제")
-            menu.addSeparator()
             add_sheet_action = menu.addAction("시트 추가")
 
             action = menu.exec(self.viewport().mapToGlobal(position))
 
             if action == rename_action:
                 self.edit(index) # 인라인 편집 시작
-            elif action == delete_action:
-                self.delete_file.emit(item_id)
             elif action == add_sheet_action:
                 self.add_sheet.emit(item_id)
 

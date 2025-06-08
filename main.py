@@ -7,6 +7,8 @@ from typing import Dict, List, Optional
 # Qt 폰트 경고 메시지 숨기기 (간단한 해결책)
 os.environ['QT_LOGGING_RULES'] = 'qt.qpa.fonts=false'
 
+# 애플리케이션 정보는 core/info.py에서 중앙 관리
+
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QMessageBox, QFileDialog, QLabel, QSplitter,
@@ -269,10 +271,10 @@ class DBExcelEditor(QMainWindow):
         super().__init__()
 
         # 설정 관리 객체 초기화
-        self.settings = QSettings("DBExcelEditor", "DBExcelEditor")
+        self.settings = QSettings(Info.SETTINGS_ORG, Info.SETTINGS_APP)
 
         # 마지막 사용 디렉토리 경로 저장 변수 (설정에서 로드, 없으면 현재 실행 디렉토리)
-        self.last_directory = self.settings.value("last_directory", os.getcwd())
+        self.last_directory = self.settings.value(Info.LAST_DIRECTORY_KEY, os.getcwd())
 
         # 다중 DB 관리자 초기화
         self.db_manager = DBManager()
@@ -392,7 +394,7 @@ class DBExcelEditor(QMainWindow):
 
     def init_ui(self):
         """UI 초기화"""
-        self.setWindowTitle("DB 기반 Excel 뷰어/에디터")
+        self.setWindowTitle(Info.APP_TITLE)
         self.setMinimumSize(1200, 800)
 
         # 중앙 위젯 및 레이아웃
@@ -886,8 +888,15 @@ class DBExcelEditor(QMainWindow):
         # --- 파일 메뉴 ---
         file_menu = menu_bar.addMenu("파일(&F)")
 
+        # DB 생성 액션 추가
+        create_db_action = QAction("DB 생성(&N)...", self)
+        create_db_action.setShortcut(QKeySequence("Ctrl+N"))  # 표준 새 파일 단축키 사용
+        create_db_action.setStatusTip("새로운 빈 데이터베이스를 생성합니다")
+        create_db_action.triggered.connect(self.create_new_db)
+        file_menu.addAction(create_db_action)
+
         # DB 파일 열기 액션 추가
-        open_db_action = QAction(QIcon.fromTheme("document-open"), "DB 파일 열기(&O)...", self)
+        open_db_action = QAction("DB 파일 열기(&O)...", self)
         open_db_action.setShortcut(QKeySequence("Ctrl+O"))  # 표준 열기 단축키 사용
         open_db_action.setStatusTip("DB 파일을 열어 편집합니다 (다중 선택 지원)")
         open_db_action.triggered.connect(self.open_db_file)
@@ -895,13 +904,13 @@ class DBExcelEditor(QMainWindow):
 
         file_menu.addSeparator()
 
-        import_action = QAction(QIcon.fromTheme("document-open"), "Excel 가져오기(&I)...", self)
+        import_action = QAction("Excel 가져오기(&I)...", self)
         import_action.setShortcut(QKeySequence("Ctrl+I"))  # 단축키 변경 (기존 Open과 충돌하지 않도록)
         import_action.setStatusTip("Excel 파일을 데이터베이스로 가져옵니다 (다중 선택 지원)")
         import_action.triggered.connect(self.import_excel_file)
         file_menu.addAction(import_action)
 
-        export_action = QAction(QIcon.fromTheme("document-save-as"), "Excel 내보내기(&E)...", self)
+        export_action = QAction("Excel 내보내기(&E)...", self)
         export_action.setShortcut(QKeySequence("Ctrl+Shift+E"))  # 충돌 없는 단축키 사용
         export_action.setStatusTip("현재 선택된 파일을 Excel 파일로 내보냅니다.")
         export_action.triggered.connect(self.export_to_excel)
@@ -910,7 +919,7 @@ class DBExcelEditor(QMainWindow):
         file_menu.addSeparator()
 
         # CSV 히스토리 생성 액션
-        csv_history_action = QAction(QIcon.fromTheme("text-csv"), "CSV 히스토리 생성(&H)...", self)
+        csv_history_action = QAction("CSV 히스토리 생성(&H)...", self)
         csv_history_action.setShortcut(QKeySequence("Ctrl+H"))
         csv_history_action.setStatusTip("열린 모든 DB의 시트를 CSV로 내보내기")
         csv_history_action.triggered.connect(self.generate_csv_history)
@@ -918,7 +927,7 @@ class DBExcelEditor(QMainWindow):
 
         file_menu.addSeparator()
 
-        save_action = QAction(QIcon.fromTheme("document-save"), "현재 시트 저장(&S)", self)
+        save_action = QAction("현재 시트 저장(&S)", self)
         save_action.setShortcut(QKeySequence.Save)  # 표준 단축키 사용
         save_action.setStatusTip("현재 편집 중인 시트의 변경 사항을 저장합니다.")
         save_action.triggered.connect(self.save_current_sheet)
@@ -926,7 +935,7 @@ class DBExcelEditor(QMainWindow):
 
         file_menu.addSeparator()
 
-        exit_action = QAction(QIcon.fromTheme("application-exit"), "종료(&X)", self)
+        exit_action = QAction("종료(&X)", self)
         exit_action.setShortcut(QKeySequence.Quit)  # 표준 단축키 사용
         exit_action.setStatusTip("애플리케이션을 종료합니다.")
         exit_action.triggered.connect(self.close)  # QMainWindow의 close 슬롯 사용
@@ -936,12 +945,12 @@ class DBExcelEditor(QMainWindow):
         edit_menu = menu_bar.addMenu("편집(&E)")
 
         # 실행 취소/다시 실행
-        undo_action = QAction(QIcon.fromTheme("edit-undo"), "실행 취소(&U)", self)
+        undo_action = QAction("실행 취소(&U)", self)
         undo_action.setShortcut(QKeySequence.Undo)
         undo_action.triggered.connect(lambda: self.grid_view.model.undo_stack.undo() if self.grid_view.model else None)
         edit_menu.addAction(undo_action)
 
-        redo_action = QAction(QIcon.fromTheme("edit-redo"), "다시 실행(&R)", self)
+        redo_action = QAction("다시 실행(&R)", self)
         redo_action.setShortcut(QKeySequence.Redo)
         redo_action.triggered.connect(lambda: self.grid_view.model.undo_stack.redo() if self.grid_view.model else None)
         edit_menu.addAction(redo_action)
@@ -949,17 +958,17 @@ class DBExcelEditor(QMainWindow):
         edit_menu.addSeparator()
 
         # 복사/붙여넣기/삭제
-        copy_action = QAction(QIcon.fromTheme("edit-copy"), "복사(&C)", self)
+        copy_action = QAction("복사(&C)", self)
         copy_action.setShortcut(QKeySequence.Copy)
         copy_action.triggered.connect(self.grid_view.copy_selection)
         edit_menu.addAction(copy_action)
 
-        paste_action = QAction(QIcon.fromTheme("edit-paste"), "붙여넣기(&P)", self)
+        paste_action = QAction("붙여넣기(&P)", self)
         paste_action.setShortcut(QKeySequence.Paste)
         paste_action.triggered.connect(self.grid_view.paste_to_selection)
         edit_menu.addAction(paste_action)
 
-        clear_action = QAction(QIcon.fromTheme("edit-clear"), "내용 지우기(&L)", self)
+        clear_action = QAction("내용 지우기(&L)", self)
         clear_action.setShortcut(QKeySequence.Delete)
         clear_action.triggered.connect(self.grid_view.clear_selection)
         edit_menu.addAction(clear_action)
@@ -1013,20 +1022,13 @@ class DBExcelEditor(QMainWindow):
 
         # --- 코드 메뉴 ---
         code_menu = menu_bar.addMenu("코드(&C)")
-        generate_action = QAction(QIcon.fromTheme("utilities-terminal"), "C 코드 생성(&G)...", self)
+        generate_action = QAction("C 코드 생성(&G)...", self)
         generate_action.setShortcut(QKeySequence("Ctrl+G"))  # 단축키 추가
         generate_action.setStatusTip("현재 선택된 파일의 $ 시트들을 기반으로 C 코드를 생성합니다.")
         generate_action.triggered.connect(self.generate_code)
         code_menu.addAction(generate_action)
 
-        # --- Git 메뉴 ---
-        git_menu = menu_bar.addMenu("Git(&G)")
 
-        # Git 변경사항 확인 액션
-        git_status_action = QAction("📋 변경사항 확인(&S)", self)
-        git_status_action.setStatusTip("Git 변경사항 확인 및 커밋/푸시")
-        git_status_action.triggered.connect(self.show_git_status)
-        git_menu.addAction(git_status_action)
 
         # --- 도움말 메뉴 ---
         help_menu = menu_bar.addMenu("도움말(&H)")
@@ -1067,19 +1069,61 @@ class DBExcelEditor(QMainWindow):
             QMessageBox.information(self, "단축키 도움말", shortcut_text)
 
     def show_about_dialog(self):
-            """프로그램 정보 대화상자 표시"""
-            about_text = """
-        <h2>DB 기반 Excel 뷰어/에디터</h2>
-        <p>버전: 1.0</p>
-        <p>SQLite 기반 Excel 데이터 관리 및 코드 생성 도구</p>
-        <p>특징:</p>
-        <ul>
-            <li>가상화된 그리드 뷰로 대용량 데이터 처리</li>
-            <li>기존 코드와의 호환성 유지</li>
-            <li>사용자 친화적인 인터페이스</li>
-        </ul>
-            """
-            QMessageBox.about(self, "프로그램 정보", about_text)
+        """프로그램 정보 대화상자 표시"""
+        # 현재 날짜 정보
+        from datetime import datetime
+        current_year = datetime.now().year
+
+        about_text = f"""
+        <div style="text-align: center; padding: 20px;">
+            <h1 style="color: #2c3e50; font-size: 24pt; margin-bottom: 10px;">{Info.APP_NAME}</h1>
+            <h3 style="color: #34495e; font-size: 14pt; margin-bottom: 20px;">버전 {Info.APP_VERSION}</h3>
+
+            <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <p style="font-size: 11pt; color: #495057; margin: 5px 0; text-align: center;">
+                    <strong>SQLite 기반 Cal 데이터 관리 및 C/H 코드 생성 도구</strong>
+                </p>
+            </div>
+
+            <div style="text-align: left; margin: 20px 0;">
+                <h4 style="color: #2c3e50; font-size: 12pt; margin-bottom: 10px;">주요 기능</h4>
+                <ul style="font-size: 10pt; color: #495057; line-height: 1.6;">
+                    <li>SQLite 데이터베이스 기반 Cal 데이터 관리</li>
+                    <li>Excel 파일 가져오기/내보내기 지원</li>
+                    <li>실시간 데이터 편집 및 검증</li>
+                    <li>자동 C/H 코드 생성 및 관리</li>
+                    <li>Git 기반 버전 관리 통합</li>
+                    <li>CSV 히스토리 관리</li>
+                </ul>
+            </div>
+
+            <div style="text-align: left; margin: 20px 0;">
+                <h4 style="color: #2c3e50; font-size: 12pt; margin-bottom: 10px;">기술 정보</h4>
+                <p style="font-size: 10pt; color: #6c757d; line-height: 1.5;">
+                    • 개발 언어: Python 3.x<br>
+                    • UI 프레임워크: PySide6 (Qt6)<br>
+                    • 데이터베이스: SQLite<br>
+                    • 버전 관리: Git 통합<br>
+                    • 플랫폼: Windows
+                </p>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #dee2e6; margin: 20px 0;">
+
+            <p style="font-size: 10pt; color: #6c757d; margin: 10px 0; text-align: center;">
+                문의: 인버터설계2팀 임현재 연구원
+            </p>
+        </div>
+        """
+
+        # 커스텀 메시지박스 생성
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("프로그램 정보")
+        msg_box.setText(about_text)
+        msg_box.setTextFormat(Qt.RichText)
+        msg_box.setStandardButtons(QMessageBox.Ok)
+        msg_box.setMinimumSize(500, 400)
+        msg_box.exec()
 
     def create_tool_bar(self):
         """툴바 생성"""
@@ -1373,7 +1417,7 @@ class DBExcelEditor(QMainWindow):
         """마지막으로 열었던 DB 파일 경로를 설정에 저장"""
         try:
             self.settings.setValue("last_db_file", db_file_path)
-            self.settings.setValue("last_directory", os.path.dirname(db_file_path))
+            self.settings.setValue(Info.LAST_DIRECTORY_KEY, os.path.dirname(db_file_path))
             logging.info(f"마지막 DB 파일 경로 저장: {db_file_path}")
         except Exception as e:
             logging.warning(f"설정 저장 중 오류: {e}")
@@ -1646,12 +1690,81 @@ class DBExcelEditor(QMainWindow):
         except Exception as e:
             logging.error(f"DB 구조 확인 중 오류: {e}")
 
+    def create_new_db(self):
+        """새로운 빈 데이터베이스 생성"""
+        try:
+            # 기본 DB 파일명 설정
+            default_db_name = f"{Info.DEFAULT_DB_NAME}{Info.DB_EXTENSION}"
+
+            # DB 파일 저장 대화상자
+            db_file_path, _ = QFileDialog.getSaveFileName(
+                self, "새 데이터베이스 생성",
+                os.path.join(self.last_directory, default_db_name),
+                Info.DB_FILE_FILTER
+            )
+
+            if not db_file_path:
+                return  # 사용자가 취소
+
+            # 확장자 확인 및 추가
+            if not db_file_path.lower().endswith(Info.DB_EXTENSION):
+                db_file_path += Info.DB_EXTENSION
+
+            # 파일이 이미 존재하는 경우 확인
+            if os.path.exists(db_file_path):
+                reply = QMessageBox.question(
+                    self, "파일 덮어쓰기 확인",
+                    f"'{os.path.basename(db_file_path)}' 파일이 이미 존재합니다.\n덮어쓰시겠습니까?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                if reply == QMessageBox.No:
+                    return
+
+                # 기존 파일 삭제
+                try:
+                    os.remove(db_file_path)
+                    logging.info(f"기존 DB 파일 삭제: {db_file_path}")
+                except Exception as e:
+                    QMessageBox.critical(self, "파일 삭제 오류", f"기존 파일을 삭제할 수 없습니다:\n{str(e)}")
+                    return
+
+            # 선택한 파일의 디렉토리 저장
+            self.last_directory = os.path.dirname(db_file_path)
+            self.settings.setValue(Info.LAST_DIRECTORY_KEY, self.last_directory)
+
+            # 새 DB 생성 및 연결
+            if self.setup_new_db_connection(db_file_path, "생성"):
+                # DB 드롭다운 업데이트
+                self.update_db_combo()
+
+                db_name = os.path.splitext(os.path.basename(db_file_path))[0]
+                self.statusBar.showMessage(f"새 데이터베이스 '{db_name}' 생성 완료")
+
+                QMessageBox.information(
+                    self, "DB 생성 완료",
+                    f"새 데이터베이스가 성공적으로 생성되었습니다.\n\n"
+                    f"파일: {os.path.basename(db_file_path)}\n"
+                    f"위치: {os.path.dirname(db_file_path)}\n\n"
+                    f"이제 Excel 파일을 가져오거나 직접 시트를 추가할 수 있습니다."
+                )
+
+                logging.info(f"새 DB 생성 완료: {db_file_path}")
+            else:
+                self.statusBar.showMessage("DB 생성 실패")
+
+        except Exception as e:
+            error_msg = f"새 데이터베이스 생성 중 오류 발생: {str(e)}"
+            logging.error(f"{error_msg}\n{traceback.format_exc()}")
+            QMessageBox.critical(self, "DB 생성 오류", error_msg)
+            self.statusBar.showMessage("DB 생성 실패")
+
     def open_db_file(self):
         """DB 파일 열기 (다중 선택 자동 지원)"""
         try:
             # 다중 파일 선택 대화상자
             db_file_paths, _ = QFileDialog.getOpenFileNames(
-                self, "DB 파일 선택 (다중 선택 가능)", self.last_directory, "SQLite 데이터베이스 (*.db)"
+                self, "DB 파일 선택 (다중 선택 가능)", self.last_directory, Info.DB_FILE_FILTER
             )
 
             if not db_file_paths:
@@ -1659,7 +1772,7 @@ class DBExcelEditor(QMainWindow):
 
             # 선택한 파일의 디렉토리 저장
             self.last_directory = os.path.dirname(db_file_paths[0])
-            self.settings.setValue("last_directory", self.last_directory)
+            self.settings.setValue(Info.LAST_DIRECTORY_KEY, self.last_directory)
 
             # 단일 파일 vs 다중 파일 자동 처리
             if len(db_file_paths) == 1:
@@ -1785,7 +1898,7 @@ class DBExcelEditor(QMainWindow):
         try:
             # 여러 파일 선택 대화상자
             db_file_paths, _ = QFileDialog.getOpenFileNames(
-                self, "여러 DB 파일 선택", self.last_directory, "SQLite 데이터베이스 (*.db)"
+                self, "여러 DB 파일 선택", self.last_directory, Info.DB_FILE_FILTER
             )
 
             if not db_file_paths:
@@ -1794,7 +1907,7 @@ class DBExcelEditor(QMainWindow):
             # 선택한 파일의 디렉토리 저장
             if db_file_paths:
                 self.last_directory = os.path.dirname(db_file_paths[0])
-                self.settings.setValue("last_directory", self.last_directory)
+                self.settings.setValue(Info.LAST_DIRECTORY_KEY, self.last_directory)
 
             # 기존 DB 처리 방식 선택
             if self.db_manager.get_database_count() > 0:
@@ -1961,7 +2074,7 @@ class DBExcelEditor(QMainWindow):
 
             # 선택한 파일의 디렉토리 저장
             self.last_directory = os.path.dirname(file_paths[0])
-            self.settings.setValue("last_directory", self.last_directory)
+            self.settings.setValue(Info.LAST_DIRECTORY_KEY, self.last_directory)
 
             # 단일 파일 vs 다중 파일 자동 처리
             if len(file_paths) == 1:
@@ -1988,7 +2101,7 @@ class DBExcelEditor(QMainWindow):
             # DB 파일 저장 대화상자 (기본값: 엑셀 파일명과 동일한 DB명)
             db_file_path, _ = QFileDialog.getSaveFileName(
                 self, "DB 파일 저장 위치 선택", os.path.join(self.last_directory, default_db_name),
-                "SQLite 데이터베이스 (*.db)"
+                Info.DB_FILE_FILTER
             )
 
             if not db_file_path:
@@ -1996,7 +2109,7 @@ class DBExcelEditor(QMainWindow):
 
             # DB 파일 경로 저장 (다음번 사용을 위해)
             self.last_directory = os.path.dirname(db_file_path)
-            self.settings.setValue("last_directory", self.last_directory)
+            self.settings.setValue(Info.LAST_DIRECTORY_KEY, self.last_directory)
 
             # Excel 가져오기용 새 DB 생성 및 연결
             if not self.setup_new_db_connection(db_file_path, "가져오기"):
@@ -2242,7 +2355,7 @@ class DBExcelEditor(QMainWindow):
 
             # 선택한 디렉토리 저장
             self.last_directory = save_directory
-            self.settings.setValue("last_directory", self.last_directory)
+            self.settings.setValue(Info.LAST_DIRECTORY_KEY, self.last_directory)
 
             # 진행률 대화상자 생성
             from PySide6.QtWidgets import QProgressDialog
@@ -2548,7 +2661,7 @@ class DBExcelEditor(QMainWindow):
 
             # 출력 디렉토리 기억
             self.last_directory = output_dir
-            self.settings.setValue("last_directory", output_dir)
+            self.settings.setValue(Info.LAST_DIRECTORY_KEY, output_dir)
 
             # 3. 코드 생성 실행
             if len(selected_dbs) == 1:
@@ -4995,6 +5108,31 @@ class DBExcelEditor(QMainWindow):
     def generate_csv_history(self):
         """CSV 히스토리 생성 (파일 메뉴에서 호출)"""
         try:
+            # 기능 설명 및 확인 대화상자
+            info_message = (
+                "CSV 히스토리 생성 기능\n\n"
+                "이 기능은 초기 CSV 히스토리 설정을 위해 현재 TreeView에 표시된 "
+                "모든 데이터베이스의 시트를 CSV 파일로 내보내는 기능입니다.\n\n"
+                "작업 내용:\n"
+                "• 현재 열린 모든 데이터베이스의 시트를 개별 CSV 파일로 변환\n"
+                "• 각 데이터베이스별로 별도의 history 디렉토리 생성\n"
+                "• 시트명을 파일명으로 하는 CSV 파일 생성\n"
+                "• 기존 CSV 파일이 있는 경우 덮어쓰기\n\n"
+                "주의사항:\n"
+                "일반적으로 파일 편집 시 CSV 히스토리가 자동으로 생성되므로, "
+                "초기 세팅, 특별한 목적 등이 없다면 사용하실 필요가 없습니다.\n\n"
+                "이 작업을 진행하시겠습니까?"
+            )
+
+            reply = QMessageBox.question(
+                self, "CSV 히스토리 생성",
+                info_message,
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+            )
+
+            if reply != QMessageBox.Yes:
+                return
+
             # 현재 열린 모든 DB 핸들러 수집
             db_handlers = []
             if self.db_manager:
@@ -5004,23 +5142,43 @@ class DBExcelEditor(QMainWindow):
                         db_handlers.append(db_handler)
 
             if not db_handlers:
-                QMessageBox.information(self, "DB 없음",
+                QMessageBox.information(self, "데이터베이스 없음",
                                       "CSV로 내보낼 데이터베이스가 없습니다.\n"
                                       "먼저 DB 파일을 열어주세요.")
                 return
 
-            # 사용자 확인
-            db_names = [os.path.basename(db.db_file_path) for db in db_handlers if hasattr(db, 'db_file_path')]
+            # 대상 DB 목록 표시 및 최종 확인
+            db_names = []
+            total_sheets = 0
+
+            for db in db_handlers:
+                if hasattr(db, 'db_file_path'):
+                    db_name = os.path.basename(db.db_file_path)
+                elif hasattr(db, 'db_file'):
+                    db_name = os.path.basename(db.db_file)
+                else:
+                    db_name = "알 수 없는 DB"
+
+                db_names.append(db_name)
+
+                # 시트 개수 계산
+                try:
+                    sheets = db.get_sheets()
+                    total_sheets += len(sheets)
+                except:
+                    pass
+
             db_list = '\n'.join([f"• {name}" for name in db_names])
 
-            reply = QMessageBox.question(
+            final_confirm = QMessageBox.question(
                 self, "CSV 히스토리 생성 확인",
-                f"다음 데이터베이스들의 모든 시트를 CSV로 내보내시겠습니까?\n\n{db_list}\n\n"
-                f"각 DB별로 history 디렉토리가 생성되고 모든 시트가 CSV 파일로 저장됩니다.",
+                f"대상 데이터베이스 ({len(db_handlers)}개):\n\n{db_list}\n\n"
+                f"총 예상 시트 수: 약 {total_sheets}개\n\n"
+                f"모든 시트를 CSV 파일로 내보내시겠습니까?",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes
             )
 
-            if reply != QMessageBox.Yes:
+            if final_confirm != QMessageBox.Yes:
                 return
 
             # 진행률 다이얼로그 표시
@@ -5538,7 +5696,7 @@ def main():
 
     # 로깅 시작 메시지
     logging.info("=========================================")
-    logging.info("Starting DBExcelEditor Application")
+    logging.info(f"Starting {Info.APP_NAME} Application v{Info.APP_VERSION}")
     logging.info(f"Python version: {sys.version}")
     logging.info(f"PySide6 version: {PySide6.__version__}") # PySide6 임포트 필요
     logging.info("=========================================")

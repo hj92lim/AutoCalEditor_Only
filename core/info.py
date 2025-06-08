@@ -58,10 +58,33 @@ class EMkMode(Enum):
 
 class Info:
 
-    # 파일 상단에 추가
-    APP_NAME = "CalAutoCodeMaker"
+    # 애플리케이션 정보
+    APP_NAME = "AutoCalEditor"
     APP_VERSION = "2.2"  # 메이저.마이너.패치 형식 권장
     APP_TITLE = f"{APP_NAME} v{APP_VERSION}"
+
+    # 파일 확장자 상수
+    DB_EXTENSION = ".db"
+    EXCEL_EXTENSIONS = (".xlsx", ".xls")
+    CSV_EXTENSION = ".csv"
+    C_EXTENSION = ".c"
+    H_EXTENSION = ".h"
+
+    # 기본 파일명 상수
+    DEFAULT_DB_NAME = "cal_database"
+    BACKUP_PREFIX = "backup"
+    HISTORY_DIR = "history"
+    LOGS_DIR = "logs"
+
+    # 설정 관련 상수
+    SETTINGS_ORG = "AutoCalEditor"
+    SETTINGS_APP = "AutoCalEditor"
+    LAST_DIRECTORY_KEY = "last_directory"
+
+    # 파일 필터 상수
+    DB_FILE_FILTER = f"SQLite 데이터베이스 (*{DB_EXTENSION})"
+    EXCEL_FILE_FILTER = f"Excel 파일 (*{EXCEL_EXTENSIONS[0]} *{EXCEL_EXTENSIONS[1]})"
+    CSV_FILE_FILTER = f"CSV 파일 (*{CSV_EXTENSION})"
 
     MaxFileNum = 10  # 최대 파일 생성 갯수
     PrjtDefCol = 2   # 프로젝트/단계 define 명 col 위치(프로젝트명 + PrjtDefCol)
