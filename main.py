@@ -22,7 +22,6 @@ from PySide6.QtGui import QAction, QIcon, QDesktopServices, QFont, QKeySequence
 from data_manager.db_handler_v2 import DBHandlerV2
 from data_manager.db_manager import DBManager
 from excel_processor.excel_importer import ExcelImporter
-from excel_processor.excel_importer_openpyxl import ExcelImporterOpenpyxl
 from excel_processor.excel_exporter import ExcelExporter
 from ui.ui_components import TreeView, ExcelGridView # VirtualizedGridModel 사용하는 버전
 from core.data_parser import DataParser
