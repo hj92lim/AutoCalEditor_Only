@@ -1,0 +1,51 @@
+{
+  "result": {
+    "success": true,
+    "execution_time": 0.1458318330005568,
+    "total_processed_items": 7176,
+    "files_processed": 4,
+    "files_failed": 0,
+    "results": [
+      {
+        "success": true,
+        "file_name": "01_EVTC387 프로젝트별 CcCal 사양.db",
+        "execution_time": 0.14480429100149195,
+        "processed_items": 1651,
+        "sheets_processed": 4
+      },
+      {
+        "success": true,
+        "file_name": "07_EVTC387 INV HW 사양 Cal 전변설.db",
+        "execution_time": 0.1395116669991694,
+        "processed_items": 877,
+        "sheets_processed": 2
+      },
+      {
+        "success": true,
+        "file_name": "00_EVTC387 전류제어 Base Cal 전제설.db",
+        "execution_time": 0.14264954199825297,
+        "processed_items": 2222,
+        "sheets_processed": 6
+      },
+      {
+        "success": true,
+        "file_name": "06_EVTC387 프로젝트별 INV HW 사양 전변설.db",
+        "execution_time": 0.14236466700094752,
+        "processed_items": 2426,
+        "sheets_processed": 4
+      }
+    ],
+    "processing_mode": "async"
+  },
+  "config": {
+    "batch_size": 500,
+    "chunk_size": 1000,
+    "gc_interval": 4,
+    "max_concurrent_dbs": 8,
+    "max_concurrent_sheets": 16,
+    "connection_timeout": 30.0,
+    "query_timeout": 10.0,
+    "enable_connection_pooling": true,
+    "pool_size": 20
+  }
+}

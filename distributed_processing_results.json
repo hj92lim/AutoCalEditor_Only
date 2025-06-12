@@ -1,0 +1,121 @@
+{
+  "result": {
+    "success": true,
+    "execution_time": 0.5571271660010098,
+    "total_processed_items": 2216,
+    "files_processed": 4,
+    "files_failed": 0,
+    "results": [
+      {
+        "success": true,
+        "file_name": "01_EVTC387 프로젝트별 CcCal 사양.db",
+        "execution_time": 0.199201791001542,
+        "processed_items": 520,
+        "sheets_processed": 4,
+        "worker_pid": 15288,
+        "memory_delta_mb": 2.890625
+      },
+      {
+        "success": true,
+        "file_name": "07_EVTC387 INV HW 사양 Cal 전변설.db",
+        "execution_time": 0.19434366700079408,
+        "processed_items": 367,
+        "sheets_processed": 2,
+        "worker_pid": 14768,
+        "memory_delta_mb": 2.77734375
+      },
+      {
+        "success": true,
+        "file_name": "00_EVTC387 전류제어 Base Cal 전제설.db",
+        "execution_time": 0.15700699999797507,
+        "processed_items": 584,
+        "sheets_processed": 6,
+        "worker_pid": 6400,
+        "memory_delta_mb": 2.98046875
+      },
+      {
+        "success": true,
+        "file_name": "06_EVTC387 프로젝트별 INV HW 사양 전변설.db",
+        "execution_time": 0.14989583300121012,
+        "processed_items": 745,
+        "sheets_processed": 4,
+        "worker_pid": 12344,
+        "memory_delta_mb": 3.15234375
+      }
+    ],
+    "processing_mode": "distributed",
+    "processes_used": 4,
+    "worker_stats": {
+      "15288": {
+        "files_processed": 1,
+        "items_processed": 520,
+        "total_time": 0.199201791001542,
+        "memory_usage": 2.890625
+      },
+      "14768": {
+        "files_processed": 1,
+        "items_processed": 367,
+        "total_time": 0.19434366700079408,
+        "memory_usage": 2.77734375
+      },
+      "6400": {
+        "files_processed": 1,
+        "items_processed": 584,
+        "total_time": 0.15700699999797507,
+        "memory_usage": 2.98046875
+      },
+      "12344": {
+        "files_processed": 1,
+        "items_processed": 745,
+        "total_time": 0.14989583300121012,
+        "memory_usage": 3.15234375
+      }
+    }
+  },
+  "stats": {
+    "total_files_processed": 4,
+    "total_items_processed": 2216,
+    "total_execution_time": 0.5571271660010098,
+    "worker_stats": {
+      "15288": {
+        "files_processed": 1,
+        "items_processed": 520,
+        "total_time": 0.199201791001542,
+        "memory_usage": 2.890625
+      },
+      "14768": {
+        "files_processed": 1,
+        "items_processed": 367,
+        "total_time": 0.19434366700079408,
+        "memory_usage": 2.77734375
+      },
+      "6400": {
+        "files_processed": 1,
+        "items_processed": 584,
+        "total_time": 0.15700699999797507,
+        "memory_usage": 2.98046875
+      },
+      "12344": {
+        "files_processed": 1,
+        "items_processed": 745,
+        "total_time": 0.14989583300121012,
+        "memory_usage": 3.15234375
+      }
+    },
+    "system_info": {
+      "cpu_count": 4,
+      "processes_used": 4,
+      "memory_limit_per_process": 512
+    }
+  },
+  "config": {
+    "batch_size": 500,
+    "chunk_size": 1000,
+    "gc_interval": 4,
+    "max_processes": 4,
+    "max_queue_size": 100,
+    "worker_timeout": 300.0,
+    "enable_shared_memory": true,
+    "memory_limit_mb": 512
+  }
+}

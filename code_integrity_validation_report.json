@@ -1,0 +1,193 @@
+{
+  "summary": {
+    "total_files_tested": 2,
+    "overall_consistency": false,
+    "critical_issues": [
+      "01_EVTC387 프로젝트별 CcCal 사양.db: 항목 수 불일치",
+      "07_EVTC387 INV HW 사양 Cal 전변설.db: 항목 수 불일치"
+    ],
+    "performance_insights": {
+      "distributed": {
+        "avg_speedup": 2.8101595743367147,
+        "min_speedup": 0.29029547339262035,
+        "max_speedup": 5.330023675280809
+      },
+      "async": {
+        "avg_speedup": 10.353184211173655,
+        "min_speedup": 1.1490830040460758,
+        "max_speedup": 19.557285418301234
+      },
+      "cached": {
+        "avg_speedup": 4.3539979750586895,
+        "min_speedup": 0.5886839303042392,
+        "max_speedup": 8.11931201981314
+      }
+    }
+  },
+  "detailed_results": {
+    "01_EVTC387 프로젝트별 CcCal 사양.db": {
+      "sequential": {
+        "success": true,
+        "execution_time": 0.16831570900103543,
+        "total_items": 520,
+        "total_hash": "b8a1fe70659dcc870f4a78898d4b1df3",
+        "sheet_results": {
+          "$(CcCalPrjDef)FileInfo": {
+            "items_count": 57,
+            "hash": "f292c11afc2590fd4add78c71478b3eb"
+          },
+          "$(CcCalPrjDef)_MV_RWD_PROJ": {
+            "items_count": 218,
+            "hash": "0e66dbbe346ff068db60c94c9c218014"
+          },
+          "$(CcCalPrjDef)_ME_RWD_PROJ": {
+            "items_count": 232,
+            "hash": "f5fad2ef1d490bf2eed76e10ebbc8807"
+          },
+          "$(CcCalPrjDef)END": {
+            "items_count": 13,
+            "hash": "bc40e6b7be38330fd20766f85a42707f"
+          }
+        },
+        "processing_mode": "sequential"
+      },
+      "distributed": {
+        "success": true,
+        "execution_time": 0.031578792000800604,
+        "total_items": 520,
+        "processing_mode": "distributed",
+        "worker_pid": 3264
+      },
+      "async": {
+        "success": true,
+        "execution_time": 0.008606291998148663,
+        "total_items": 0,
+        "processing_mode": "async"
+      },
+      "cached": {
+        "success": true,
+        "first_run": {
+          "execution_time": 0.020730291998916073,
+          "total_items": 520
+        },
+        "second_run": {
+          "execution_time": 0.016710291001800215,
+          "total_items": 520
+        },
+        "cache_effect": 1.2405703764633889,
+        "processing_mode": "cached"
+      },
+      "analysis": {
+        "item_count_consistency": false,
+        "processing_success_rate": 133.33333333333331,
+        "performance_comparison": {
+          "distributed": {
+            "execution_time": 0.031578792000800604,
+            "speedup": 5.330023675280809
+          },
+          "async": {
+            "execution_time": 0.008606291998148663,
+            "speedup": 19.557285418301234
+          },
+          "cached": {
+            "execution_time": 0.020730291998916073,
+            "speedup": 8.11931201981314
+          }
+        },
+        "issues": [
+          "항목 수 불일치: {'sequential': 520, 'distributed': 520, 'async': 0, 'cached': 520}"
+        ],
+        "item_counts": {
+          "sequential": 520,
+          "distributed": 520,
+          "async": 0,
+          "cached": 520
+        },
+        "execution_times": {
+          "sequential": 0.16831570900103543,
+          "distributed": 0.031578792000800604,
+          "async": 0.008606291998148663,
+          "cached": 0.020730291998916073
+        }
+      }
+    },
+    "07_EVTC387 INV HW 사양 Cal 전변설.db": {
+      "sequential": {
+        "success": true,
+        "execution_time": 0.012357333998807007,
+        "total_items": 367,
+        "total_hash": "b5dfb980d59af9fae45ca1495c03c268",
+        "sheet_results": {
+          "$(SpInvCal)FileInfo": {
+            "items_count": 57,
+            "hash": "23f2db6f9fcc045358fbf07d9b8ff760"
+          },
+          "$(SpInvCal)COMMON": {
+            "items_count": 310,
+            "hash": "68a489af6a7f2610d7667bc5eecb9199"
+          }
+        },
+        "processing_mode": "sequential"
+      },
+      "distributed": {
+        "success": true,
+        "execution_time": 0.04256812500170781,
+        "total_items": 367,
+        "processing_mode": "distributed",
+        "worker_pid": 16116
+      },
+      "async": {
+        "success": true,
+        "execution_time": 0.010754082999483217,
+        "total_items": 0,
+        "processing_mode": "async"
+      },
+      "cached": {
+        "success": true,
+        "first_run": {
+          "execution_time": 0.02099145800093538,
+          "total_items": 367
+        },
+        "second_run": {
+          "execution_time": 0.02458104100151104,
+          "total_items": 367
+        },
+        "cache_effect": 0.8539694474145745,
+        "processing_mode": "cached"
+      },
+      "analysis": {
+        "item_count_consistency": false,
+        "processing_success_rate": 133.33333333333331,
+        "performance_comparison": {
+          "distributed": {
+            "execution_time": 0.04256812500170781,
+            "speedup": 0.29029547339262035
+          },
+          "async": {
+            "execution_time": 0.010754082999483217,
+            "speedup": 1.1490830040460758
+          },
+          "cached": {
+            "execution_time": 0.02099145800093538,
+            "speedup": 0.5886839303042392
+          }
+        },
+        "issues": [
+          "항목 수 불일치: {'sequential': 367, 'distributed': 367, 'async': 0, 'cached': 367}"
+        ],
+        "item_counts": {
+          "sequential": 367,
+          "distributed": 367,
+          "async": 0,
+          "cached": 367
+        },
+        "execution_times": {
+          "sequential": 0.012357333998807007,
+          "distributed": 0.04256812500170781,
+          "async": 0.010754082999483217,
+          "cached": 0.02099145800093538
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "overall_integrity_score": 100.0,
+  "tests_passed": 4,
+  "total_tests": 4,
+  "data_consistency_verification": {
+    "item_count_consistent": true,
+    "processing_success_consistent": true,
+    "cache_performance_improvement": 1.5306306710153936,
+    "data_integrity_maintained": true,
+    "no_cache_result": {
+      "execution_time": 0.1767328340029053,
+      "total_items": 887,
+      "success": true,
+      "processing_mode": "no_cache"
+    },
+    "with_cache_result": {
+      "first_execution_time": 0.042326082999352366,
+      "second_execution_time": 0.027652707998640835,
+      "cache_effect": 1.5306306710153936,
+      "total_items_first": 887,
+      "total_items_second": 887,
+      "success_first": true,
+      "success_second": true,
+      "cache_stats": {
+        "memory_cache": {
+          "hits": 6,
+          "misses": 6,
+          "hit_rate": 50.0,
+          "cache_size": 6,
+          "max_size": 5000
+        },
+        "total_hits": 6,
+        "total_misses": 6,
+        "hit_rate": 50.0
+      },
+      "processing_mode": "with_cache"
+    }
+  },
+  "complex_data_integrity_verification": {
+    "korean_text_integrity": true,
+    "special_chars_integrity": true,
+    "json_data_integrity": true,
+    "emoji_integrity": true,
+    "long_string_integrity": true,
+    "overall_integrity": true
+  },
+  "cache_invalidation_verification": {
+    "initial_cache_working": true,
+    "invalidation_triggered": true,
+    "new_cache_working": true,
+    "cache_invalidation_accurate": true
+  },
+  "summary": {
+    "cache_performance_improvement": 1.5306306710153936,
+    "data_integrity_maintained": true,
+    "complex_data_supported": true,
+    "cache_invalidation_working": true
+  }
+}

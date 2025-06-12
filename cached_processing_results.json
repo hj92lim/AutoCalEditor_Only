@@ -1,0 +1,104 @@
+{
+  "first_run": {
+    "success": true,
+    "execution_time": 0.27321670899982564,
+    "total_processed_items": 2216,
+    "files_processed": 4,
+    "files_failed": 0,
+    "results": [
+      {
+        "success": true,
+        "file_name": "01_EVTC387 프로젝트별 CcCal 사양.db",
+        "execution_time": 0.14961287500045728,
+        "processed_items": 520,
+        "sheets_processed": 4
+      },
+      {
+        "success": true,
+        "file_name": "07_EVTC387 INV HW 사양 Cal 전변설.db",
+        "execution_time": 0.023763416000292636,
+        "processed_items": 367,
+        "sheets_processed": 2
+      },
+      {
+        "success": true,
+        "file_name": "00_EVTC387 전류제어 Base Cal 전제설.db",
+        "execution_time": 0.06785441700048978,
+        "processed_items": 584,
+        "sheets_processed": 6
+      },
+      {
+        "success": true,
+        "file_name": "06_EVTC387 프로젝트별 INV HW 사양 전변설.db",
+        "execution_time": 0.030658666000817902,
+        "processed_items": 745,
+        "sheets_processed": 4
+      }
+    ],
+    "processing_mode": "cached"
+  },
+  "second_run": {
+    "success": true,
+    "execution_time": 0.0697990420012502,
+    "total_processed_items": 2216,
+    "files_processed": 4,
+    "files_failed": 0,
+    "results": [
+      {
+        "success": true,
+        "file_name": "01_EVTC387 프로젝트별 CcCal 사양.db",
+        "execution_time": 0.021952499999315478,
+        "processed_items": 520,
+        "sheets_processed": 4
+      },
+      {
+        "success": true,
+        "file_name": "07_EVTC387 INV HW 사양 Cal 전변설.db",
+        "execution_time": 0.01282720800008974,
+        "processed_items": 367,
+        "sheets_processed": 2
+      },
+      {
+        "success": true,
+        "file_name": "00_EVTC387 전류제어 Base Cal 전제설.db",
+        "execution_time": 0.017026042001816677,
+        "processed_items": 584,
+        "sheets_processed": 6
+      },
+      {
+        "success": true,
+        "file_name": "06_EVTC387 프로젝트별 INV HW 사양 전변설.db",
+        "execution_time": 0.017278541999985464,
+        "processed_items": 745,
+        "sheets_processed": 4
+      }
+    ],
+    "processing_mode": "cached"
+  },
+  "cache_stats": {
+    "memory_cache": {
+      "hits": 16,
+      "misses": 16,
+      "hit_rate": 50.0,
+      "cache_size": 16,
+      "max_size": 1000
+    },
+    "total_hits": 16,
+    "total_misses": 16,
+    "hit_rate": 50.0
+  },
+  "config": {
+    "batch_size": 500,
+    "chunk_size": 1000,
+    "gc_interval": 4,
+    "enable_redis_cache": true,
+    "redis_host": "localhost",
+    "redis_port": 6379,
+    "redis_db": 0,
+    "cache_ttl": 3600,
+    "enable_memory_cache": true,
+    "memory_cache_size": 1000,
+    "cache_compression": true,
+    "enable_sheet_level_cache": true
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "overall_quality_score": 3,
+  "max_possible_score": 5,
+  "quality_percentage": 60.0,
+  "redis_connection_test": {
+    "redis_available": false,
+    "connection_successful": false,
+    "basic_operations": false,
+    "error_details": "Redis 모듈이 설치되지 않음"
+  },
+  "fallback_mechanism_test": {
+    "memory_only": {
+      "success": true,
+      "cache_working": true
+    },
+    "redis_fallback": {
+      "success": true,
+      "fallback_working": true,
+      "redis_failed_gracefully": true
+    }
+  },
+  "cache_key_generation_test": {
+    "consistency": true,
+    "parameter_sensitivity": true,
+    "modification_sensitivity": true,
+    "key_format_valid": true
+  },
+  "data_consistency_test": {
+    "storage_retrieval": true,
+    "lru_behavior": true,
+    "data_integrity": true,
+    "concurrent_access": true,
+    "cache_stats": {
+      "hits": 35,
+      "misses": 1,
+      "hit_rate": 97.22222222222221,
+      "cache_size": 10,
+      "max_size": 10
+    }
+  },
+  "performance_impact_test": {
+    "no_cache_time": 0.12498504200266325,
+    "first_run_time": 0.02737395800068043,
+    "second_run_time": 0.022940625000046566,
+    "cache_effect": 1.1932524942378364,
+    "cache_overhead": -78.09821274445214,
+    "cache_stats": {
+      "memory_cache": {
+        "hits": 4,
+        "misses": 4,
+        "hit_rate": 50.0,
+        "cache_size": 4,
+        "max_size": 1000
+      },
+      "total_hits": 4,
+      "total_misses": 4,
+      "hit_rate": 50.0
+    },
+    "data_consistency": true
+  },
+  "recommendations": [
+    "Redis 서버 설치 및 설정을 고려하여 더 나은 캐시 성능을 얻을 수 있습니다.",
+    "캐시 효과가 제한적입니다. 캐시 크기나 전략을 조정해보세요."
+  ]
+}

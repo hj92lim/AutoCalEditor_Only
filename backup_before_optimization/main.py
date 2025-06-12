@@ -42,16 +42,6 @@ except ImportError as e:
     print("🔍 Python 경로:", sys.path[:3])  # 처음 3개만 표시
     sys.exit(1)
 
-# Phase 3 최적화 통합 (안전한 import)
-try:
-    from ui_backend_integration_strategy import inject_phase3_into_existing_class
-    PHASE3_INTEGRATION_AVAILABLE = True
-    logging.info("✓ Phase 3 통합 모듈 로드 성공")
-except ImportError as e:
-    PHASE3_INTEGRATION_AVAILABLE = False
-    logging.info(f"ℹ️ Phase 3 통합 모듈 없음: {e} (기본 기능으로 작동)")
-    print("ℹ️ Phase 3 최적화 없이 기본 기능으로 작동합니다.")
-
 
 # 상세한 디버그 로깅 시스템 설정
 def setup_detailed_logging():
@@ -274,7 +264,7 @@ class OriginalFileSurrogate:
 
 
 class DBExcelEditor(QMainWindow):
-    """DB 기반 Excel 뷰어/에디터 메인 클래스 (Phase 3 최적화 통합)"""
+    """DB 기반 Excel 뷰어/에디터 메인 클래스"""
 
     def __init__(self):
         """DBExcelEditor 초기화"""
@@ -5728,8 +5718,6 @@ def main():
     # 로깅 시작 메시지
     logging.info("=========================================")
     logging.info(f"Starting {Info.APP_NAME} Application v{Info.APP_VERSION}")
-    if PHASE3_INTEGRATION_AVAILABLE:
-        logging.info("🚀 Phase 3 최적화 통합 버전")
     logging.info(f"Python version: {sys.version}")
     logging.info(f"PySide6 version: {PySide6.__version__}") # PySide6 임포트 필요
     logging.info("=========================================")
@@ -5748,17 +5736,4 @@ except ImportError:
 # ---------------------------------
 
 if __name__ == "__main__":
-    # Phase 3 최적화 통합 적용
-    if PHASE3_INTEGRATION_AVAILABLE:
-        try:
-            # DBExcelEditor 클래스에 Phase 3 기능 주입
-            inject_phase3_into_existing_class(DBExcelEditor)
-            logging.info("✅ Phase 3 최적화가 기존 UI에 성공적으로 통합되었습니다.")
-            print("🚀 Phase 3 최적화 활성화: 4.53배 성능 향상 적용")
-        except Exception as e:
-            logging.warning(f"⚠️ Phase 3 통합 실패, 기본 기능으로 작동: {e}")
-            print("⚠️ Phase 3 최적화 없이 기본 기능으로 작동합니다.")
-    else:
-        print("ℹ️ Phase 3 최적화 모듈이 없어 기본 기능으로 작동합니다.")
-
     main()

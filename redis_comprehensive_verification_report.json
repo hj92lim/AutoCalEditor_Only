@@ -1,0 +1,59 @@
+{
+  "overall_quality_score": 80.0,
+  "tests_passed": 4,
+  "total_tests": 5,
+  "redis_connection_test": {
+    "redis_module_available": false,
+    "redis_server_running": false,
+    "basic_operations_working": false,
+    "connection_details": {},
+    "error_details": "Redis 모듈이 설치되지 않음"
+  },
+  "hierarchical_caching_test": {
+    "redis_cache_working": false,
+    "memory_cache_working": true,
+    "hierarchical_flow": false,
+    "cache_statistics": {
+      "memory_cache": {
+        "hits": 0,
+        "misses": 1,
+        "hit_rate": 0.0,
+        "cache_size": 0,
+        "max_size": 100
+      },
+      "total_hits": 1,
+      "total_misses": 1,
+      "hit_rate": 50.0
+    }
+  },
+  "fallback_mechanism_test": {
+    "redis_connection_failed": true,
+    "fallback_to_memory": true,
+    "data_consistency": true,
+    "graceful_degradation": true
+  },
+  "cache_key_generation_test": {
+    "key_consistency": true,
+    "parameter_sensitivity": true,
+    "modification_sensitivity": true,
+    "mtime_included": true,
+    "size_included": true
+  },
+  "lru_algorithm_test": {
+    "lru_eviction_working": true,
+    "access_order_maintained": true,
+    "size_limit_enforced": true,
+    "statistics_accurate": true
+  },
+  "thread_safety_test": {
+    "concurrent_access_safe": true,
+    "data_integrity_maintained": true,
+    "no_race_conditions": true,
+    "operations_completed": 500,
+    "operations_expected": 500
+  },
+  "recommendations": [
+    "Redis 모듈 설치: pip install redis",
+    "Redis 서버 설치 및 실행을 권장합니다 (성능 향상)"
+  ]
+}
