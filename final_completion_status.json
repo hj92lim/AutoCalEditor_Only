@@ -1,0 +1,203 @@
+{
+  "modules_compiled": 4,
+  "modules_total": 4,
+  "performance_results": {
+    "excel_1000": {
+      "python_time": 0.0007376836008916143,
+      "cython_time": 0.0006241748007596471,
+      "speedup": 1.1818541857085902
+    },
+    "code_gen_1000": {
+      "python_time": 0.0007376836008916143,
+      "cython_time": 0.00011646679922705516,
+      "speedup": 6.333853130568826
+    },
+    "ultra_code_gen_1000": {
+      "python_time": 0.0007376836008916143,
+      "cython_time": 0.00012937540013808758,
+      "speedup": 5.701884594012887
+    },
+    "excel_5000": {
+      "python_time": 0.0033090662000176962,
+      "cython_time": 0.004168750000826549,
+      "speedup": 0.79377899834761
+    },
+    "code_gen_5000": {
+      "python_time": 0.0033090662000176962,
+      "cython_time": 0.0013097918003040832,
+      "speedup": 2.5264062572765065
+    },
+    "ultra_code_gen_5000": {
+      "python_time": 0.0033090662000176962,
+      "cython_time": 0.0012484584003686905,
+      "speedup": 2.6505217947514104
+    },
+    "excel_10000": {
+      "python_time": 0.0064449083998624705,
+      "cython_time": 0.009671833200991386,
+      "speedup": 0.6663585140407355
+    },
+    "code_gen_10000": {
+      "python_time": 0.0064449083998624705,
+      "cython_time": 0.0020861249999143184,
+      "speedup": 3.0894162143338373
+    },
+    "ultra_code_gen_10000": {
+      "python_time": 0.0064449083998624705,
+      "cython_time": 0.0015351580004789867,
+      "speedup": 4.198205264768569
+    }
+  },
+  "accuracy_results": {
+    "test_case_1": {
+      "length_match": true,
+      "content_match": true,
+      "python_result": [
+        [
+          "DEFINE",
+          "CONST",
+          "FLOAT32",
+          "TEST_FLOAT",
+          "123.45f",
+          "Test float"
+        ]
+      ],
+      "cython_result": [
+        [
+          "DEFINE",
+          "CONST",
+          "FLOAT32",
+          "TEST_FLOAT",
+          "123.45f",
+          "Test float"
+        ]
+      ]
+    },
+    "test_case_2": {
+      "length_match": true,
+      "content_match": true,
+      "python_result": [
+        [
+          "DEFINE",
+          "CONST",
+          "FLOAT32",
+          "TEST_INT",
+          "123.f",
+          "Test integer as float"
+        ]
+      ],
+      "cython_result": [
+        [
+          "DEFINE",
+          "CONST",
+          "FLOAT32",
+          "TEST_INT",
+          "123.f",
+          "Test integer as float"
+        ]
+      ]
+    },
+    "test_case_3": {
+      "length_match": true,
+      "content_match": true,
+      "python_result": [
+        [
+          "DEFINE",
+          "CONST",
+          "FLOAT32",
+          "TEST_ZERO",
+          "0.f",
+          "Test zero"
+        ]
+      ],
+      "cython_result": [
+        [
+          "DEFINE",
+          "CONST",
+          "FLOAT32",
+          "TEST_ZERO",
+          "0.f",
+          "Test zero"
+        ]
+      ]
+    },
+    "test_case_4": {
+      "length_match": true,
+      "content_match": true,
+      "python_result": [
+        [
+          "DEFINE",
+          "",
+          "FLOAT32",
+          "TEST_EMPTY",
+          "",
+          ""
+        ]
+      ],
+      "cython_result": [
+        [
+          "DEFINE",
+          "",
+          "FLOAT32",
+          "TEST_EMPTY",
+          "",
+          ""
+        ]
+      ]
+    },
+    "test_case_5": {
+      "length_match": true,
+      "content_match": true,
+      "python_result": [
+        [
+          "DEFINE",
+          "CONST",
+          "INT32",
+          "TEST_INT32",
+          "456",
+          "Test integer"
+        ]
+      ],
+      "cython_result": [
+        [
+          "DEFINE",
+          "CONST",
+          "INT32",
+          "TEST_INT32",
+          "456",
+          "Test integer"
+        ]
+      ]
+    },
+    "test_case_6": {
+      "length_match": true,
+      "content_match": true,
+      "python_result": [
+        [
+          "DEFINE",
+          "CONST",
+          "FLOAT32",
+          "TEST_COMPLEX",
+          "7.89f",
+          "Complex value"
+        ]
+      ],
+      "cython_result": [
+        [
+          "DEFINE",
+          "CONST",
+          "FLOAT32",
+          "TEST_COMPLEX",
+          "7.89f",
+          "Complex value"
+        ]
+      ]
+    }
+  },
+  "avg_code_gen_speedup": 4.083381209285339,
+  "performance_target_met": true,
+  "accuracy_rate": 100.0,
+  "functional_accuracy": true,
+  "overall_completion": 100.0,
+  "timestamp": "2025-06-12 21:37:38"
+}

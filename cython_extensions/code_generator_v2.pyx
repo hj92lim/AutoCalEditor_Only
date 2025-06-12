@@ -3,9 +3,13 @@
 # cython: boundscheck=False
 # cython: wraparound=False
 # cython: cdivision=True
+# cython: initializedcheck=False
+# cython: nonecheck=False
 
 import cython
 from cython import boundscheck, wraparound
+from libc.string cimport memcpy
+from libc.stdlib cimport malloc, free
 
 @boundscheck(False)
 @wraparound(False)
@@ -39,41 +43,219 @@ def fast_read_cal_list_processing(list sht_data, int start_row, int end_row, lis
 @wraparound(False)
 def fast_write_cal_list_processing(list temp_code_items):
     """
-    writeCalList의 코드 생성 최적화
+    writeCalList의 코드 생성 최적화 (극한 최적화 버전)
     """
-    cdef int i, length
+    cdef int i, length, line_length
     cdef list line_str
     cdef str op_code, key_str, type_str, name_str, val_str, desc_str
-    cdef list processed_items = []
-    
+    cdef list processed_items
+    cdef object line_item
+    cdef bint has_float32
+    cdef object item0, item1, item2, item3, item4, item5
+
     if not temp_code_items:
-        return processed_items
-    
+        return []
+
     length = len(temp_code_items)
+    processed_items = [None] * length  # 미리 할당으로 성능 향상
+
     for i in range(length):
-        line_str = temp_code_items[i]
-        if line_str and len(line_str) >= 6:
-            op_code = line_str[0] if line_str[0] else ""
-            key_str = line_str[1] if line_str[1] else ""
-            type_str = line_str[2] if line_str[2] else ""
-            name_str = line_str[3] if line_str[3] else ""
-            val_str = line_str[4] if line_str[4] else ""
-            desc_str = line_str[5] if line_str[5] else ""
-            
-            # FLOAT32 변수의 숫자에 f 접미사 추가 최적화
-            if val_str and type_str and "FLOAT32" in type_str:
-                val_str = fast_add_float_suffix_with_type(val_str, type_str)
-            
-            processed_items.append([op_code, key_str, type_str, name_str, val_str, desc_str])
-    
+        line_item = temp_code_items[i]
+        if line_item is not None:
+            line_str = <list>line_item
+            line_length = len(line_str)
+
+            if line_length >= 6:
+                # 직접 인덱스 접근으로 최적화
+                item0 = line_str[0]
+                item1 = line_str[1]
+                item2 = line_str[2]
+                item3 = line_str[3]
+                item4 = line_str[4]
+                item5 = line_str[5]
+
+                # 타입 변환 최적화
+                op_code = <str>item0 if item0 is not None else ""
+                key_str = <str>item1 if item1 is not None else ""
+                type_str = <str>item2 if item2 is not None else ""
+                name_str = <str>item3 if item3 is not None else ""
+                val_str = <str>item4 if item4 is not None else ""
+                desc_str = <str>item5 if item5 is not None else ""
+
+                # FLOAT32 타입 확인 최적화 (문자열 비교 최소화)
+                if val_str and type_str:
+                    # 빠른 문자열 체크: 첫 글자가 'F'인지 확인
+                    if len(type_str) >= 7 and type_str[0] == 'F' and "FLOAT32" in type_str:
+                        val_str = fast_add_float_suffix_ultra_optimized(val_str)
+
+                processed_items[i] = [op_code, key_str, type_str, name_str, val_str, desc_str]
+            else:
+                processed_items[i] = line_str
+        else:
+            processed_items[i] = None
+
     return processed_items
 
+@boundscheck(False)
+@wraparound(False)
+cdef str fast_add_float_suffix_ultra_optimized(str val_str):
+    """극한 최적화된 float suffix 추가"""
+    cdef int length = len(val_str)
+    cdef int i = 0
+    cdef char c
+    cdef bint has_dot = False
+    cdef bint has_digit = False
+    cdef bint is_negative = False
+
+    if length == 0:
+        return val_str
+
+    # 이미 접미사가 있는지 빠른 체크
+    if val_str[length-1] == 'f' or val_str[length-1] == 'F':
+        return val_str
+
+    # 주석 체크 (빠른 체크)
+    if '/' in val_str:
+        return val_str
+
+    # 음수 체크
+    if val_str[0] == '-':
+        is_negative = True
+        i = 1
+
+    # 숫자 패턴 확인 (C 수준 최적화)
+    while i < length:
+        c = val_str[i]
+        if c >= '0' and c <= '9':
+            has_digit = True
+        elif c == '.':
+            if has_dot:  # 소수점이 두 번 나오면 안됨
+                return val_str
+            has_dot = True
+        else:
+            return val_str  # 숫자가 아닌 문자 발견
+        i += 1
+
+    if not has_digit:
+        return val_str
+
+    # 접미사 추가 (최적화된 문자열 연산)
+    if has_dot:
+        return val_str + 'f'
+    else:
+        if val_str == '0' or val_str == '-0':
+            return '0.f'
+        else:
+            return val_str + '.f'
+
+@boundscheck(False)
+@wraparound(False)
+def ultra_fast_write_cal_list_processing(list temp_code_items):
+    """
+    극한 최적화된 배치 처리 버전
+    """
+    cdef int i, length, batch_size = 1000
+    cdef list result = []
+
+    if not temp_code_items:
+        return result
+
+    length = len(temp_code_items)
+
+    # 배치 단위로 처리
+    for i in range(0, length, batch_size):
+        end_idx = min(i + batch_size, length)
+        batch = temp_code_items[i:end_idx]
+        processed_batch = process_batch_optimized(batch)
+        result.extend(processed_batch)
+
+    return result
+
+@boundscheck(False)
+@wraparound(False)
+cdef list process_batch_optimized(list batch):
+    """배치 최적화 처리"""
+    cdef int i, batch_length = len(batch)
+    cdef list processed_batch = [None] * batch_length
+    cdef list line_str
+    cdef object line_item
+    cdef str op_code, key_str, type_str, name_str, val_str, desc_str
+    cdef bint needs_float_processing
+
+    for i in range(batch_length):
+        line_item = batch[i]
+        if line_item is not None and len(line_item) >= 6:
+            line_str = <list>line_item
+
+            # 직접 할당으로 최적화
+            op_code = <str>line_str[0] if line_str[0] is not None else ""
+            key_str = <str>line_str[1] if line_str[1] is not None else ""
+            type_str = <str>line_str[2] if line_str[2] is not None else ""
+            name_str = <str>line_str[3] if line_str[3] is not None else ""
+            val_str = <str>line_str[4] if line_str[4] is not None else ""
+            desc_str = <str>line_str[5] if line_str[5] is not None else ""
+
+            # FLOAT32 처리 최적화
+            needs_float_processing = (val_str and type_str and
+                                    len(type_str) >= 7 and
+                                    type_str[0] == 'F' and
+                                    "FLOAT32" in type_str)
+
+            if needs_float_processing:
+                val_str = fast_add_float_suffix_ultra_optimized(val_str)
+
+            processed_batch[i] = [op_code, key_str, type_str, name_str, val_str, desc_str]
+        else:
+            processed_batch[i] = line_item
+
+    return processed_batch
+
+
+@boundscheck(False)
+@wraparound(False)
+cdef bint is_digit_char(char c):
+    """C 수준 숫자 문자 확인"""
+    return c >= '0' and c <= '9'
+
+@boundscheck(False)
+@wraparound(False)
+cdef bint is_float_number_cython(str val_str):
+    """C 수준 float 숫자 패턴 확인"""
+    cdef int length = len(val_str)
+    cdef int i = 0
+    cdef char c
+    cdef bint has_dot = False
+    cdef bint has_digit = False
+
+    if length == 0:
+        return False
+
+    # 음수 처리
+    if val_str[0] == '-':
+        i = 1
+        if length == 1:
+            return False
+
+    # 각 문자 확인
+    while i < length:
+        c = val_str[i]
+        if is_digit_char(c):
+            has_digit = True
+        elif c == '.':
+            if has_dot:  # 소수점이 두 번 나오면 안됨
+                return False
+            has_dot = True
+        else:
+            return False
+        i += 1
+
+    return has_digit
 
 @boundscheck(False)
 @wraparound(False)
 def fast_add_float_suffix_with_type(str val_str, str type_str):
     """
-    Float Suffix 추가 최적화 (타입 체크 포함) - 안전한 버전
+    Float Suffix 추가 최적화 (C 수준 문자열 처리)
     """
     # float 타입이 아니면 원본 값 그대로 반환
     if "float" not in type_str.lower():
@@ -87,36 +269,22 @@ def fast_add_float_suffix_with_type(str val_str, str type_str):
     if '/*' in val_str or '//' in val_str:
         return val_str
 
-    # Python 정규식을 사용한 안전한 처리 (Cython 오류 회피)
-    import re
+    # C 수준 숫자 패턴 확인
+    if not is_float_number_cython(val_str):
+        return val_str
 
-    # 소수점이 있는 숫자
-    if re.match(r'^\d+\.\d*$', val_str) or re.match(r'^\.\d+$', val_str):
+    # 소수점 확인
+    cdef bint has_dot = '.' in val_str
+
+    if has_dot:
+        # 이미 소수점이 있으면 f만 추가
         return val_str + 'f'
-
-    # 소수점만 있는 숫자
-    if re.match(r'^\d+\.$', val_str):
-        return val_str + 'f'
-
-    # 정수 (0 포함)
-    if re.match(r'^\d+$', val_str):
-        if val_str == '0':
+    else:
+        # 정수인 경우
+        if val_str == '0' or val_str == '-0':
             return '0.f'
         else:
             return val_str + '.f'
-
-    # 음수 처리
-    if re.match(r'^-\d+\.\d*$', val_str) or re.match(r'^-\.\d+$', val_str):
-        return val_str + 'f'
-
-    if re.match(r'^-\d+\.$', val_str):
-        return val_str + 'f'
-
-    if re.match(r'^-\d+$', val_str):
-        return val_str + '.f'
-
-    # 패턴에 맞지 않으면 원본 반환
-    return val_str
 
 
 @boundscheck(False)
@@ -166,43 +334,81 @@ def apply_simple_float_suffix(str val_str):
 
 @boundscheck(False)
 @wraparound(False)
+cdef str extract_and_replace_comments_cython(str val_str, list comment_placeholders, list comment_values):
+    """C 수준 주석 추출 및 치환"""
+    cdef int i = 0
+    cdef int length = len(val_str)
+    cdef int comment_start = -1
+    cdef int comment_count = 0
+    cdef str result = ""
+    cdef str placeholder
+    cdef str comment_text
+
+    while i < length:
+        # 블록 주석 시작 확인
+        if i < length - 1 and val_str[i] == '/' and val_str[i + 1] == '*':
+            if comment_start == -1:
+                comment_start = i
+            i += 2
+            continue
+
+        # 블록 주석 끝 확인
+        if comment_start != -1 and i < length - 1 and val_str[i] == '*' and val_str[i + 1] == '/':
+            comment_text = val_str[comment_start:i + 2]
+            placeholder = f"__COMMENT_BLOCK_{comment_count}__"
+            comment_placeholders.append(placeholder)
+            comment_values.append(comment_text)
+            result += placeholder
+            comment_count += 1
+            comment_start = -1
+            i += 2
+            continue
+
+        # 라인 주석 확인
+        if comment_start == -1 and i < length - 1 and val_str[i] == '/' and val_str[i + 1] == '/':
+            # 라인 끝까지 찾기
+            line_end = i
+            while line_end < length and val_str[line_end] != '\n':
+                line_end += 1
+
+            comment_text = val_str[i:line_end]
+            placeholder = f"__COMMENT_LINE_{comment_count}__"
+            comment_placeholders.append(placeholder)
+            comment_values.append(comment_text)
+            result += placeholder
+            comment_count += 1
+            i = line_end
+            continue
+
+        # 일반 문자 처리
+        if comment_start == -1:
+            result += val_str[i]
+
+        i += 1
+
+    return result
+
+@boundscheck(False)
+@wraparound(False)
 def process_complex_float_suffix(str val_str):
     """
-    복잡한 문자열의 Float Suffix 처리 (주석 포함)
+    복잡한 문자열의 Float Suffix 처리 (C 수준 주석 처리)
     """
-    # 복잡한 경우는 Python 정규식 사용 (안전성 우선)
-    import re
-    
-    # 주석 보존을 위한 임시 치환
-    comments = {}
-    comment_count = 0
-    modified_val = val_str
-    
-    # 블록 주석 처리
-    block_comment_pattern = re.compile(r'/\*.*?\*/', re.DOTALL)
-    block_comments = list(block_comment_pattern.finditer(modified_val))
-    for comment in block_comments:
-        placeholder = f"__COMMENT_BLOCK_{comment_count}__"
-        comments[placeholder] = comment.group(0)
-        modified_val = modified_val.replace(comment.group(0), placeholder)
-        comment_count += 1
-    
-    # 라인 주석 처리
-    line_comment_pattern = re.compile(r'//.*?(?=\n|$)')
-    line_comments = list(line_comment_pattern.finditer(modified_val))
-    for comment in line_comments:
-        placeholder = f"__COMMENT_LINE_{comment_count}__"
-        comments[placeholder] = comment.group(0)
-        modified_val = modified_val.replace(comment.group(0), placeholder)
-        comment_count += 1
-    
+    cdef list comment_placeholders = []
+    cdef list comment_values = []
+    cdef str modified_val
+    cdef int i
+
+    # C 수준 주석 추출
+    modified_val = extract_and_replace_comments_cython(val_str, comment_placeholders, comment_values)
+
     # 주석이 제거된 부분에만 Float Suffix 적용
     modified_val = apply_simple_float_suffix(modified_val)
-    
+
     # 주석 복원
-    for placeholder, comment in comments.items():
-        modified_val = modified_val.replace(placeholder, comment)
-    
+    for i in range(len(comment_placeholders)):
+        modified_val = modified_val.replace(comment_placeholders[i], comment_values[i])
+
     return modified_val
 
 
