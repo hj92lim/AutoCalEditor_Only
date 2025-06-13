@@ -2745,6 +2745,7 @@ class DBExcelEditor(QMainWindow):
             from PySide6.QtWidgets import QProgressDialog
             db_name = os.path.basename(selected_db.db_file)
             progress = QProgressDialog(f"코드 생성 중: {db_name}", "취소", 0, 100, self)
+            progress.setWindowTitle("AutoCalEditor - 코드 생성")
             progress.setWindowModality(Qt.WindowModal)
             progress.setMinimumDuration(0)  # 즉시 표시
             progress.setAutoClose(False)  # 자동 닫기 방지
@@ -2836,7 +2837,7 @@ class DBExcelEditor(QMainWindow):
             dollar_sheets = [s for s in all_sheets if s.get('is_dollar_sheet', False)]
 
             progress.setValue(30)
-            progress.setLabelText(f"📋 시트 분류 중... ({len(dollar_sheets)}개 $ 시트 발견)")
+            progress.setLabelText(f"시트 분류 중... ({len(dollar_sheets)}개 시트 발견)")
             QApplication.processEvents()
 
             # 2. 그룹별로 시트 분류 (C# CtrlXls.cs 88-114행 로직)
@@ -2847,7 +2848,7 @@ class DBExcelEditor(QMainWindow):
                 if i % 2 == 0:  # 2개마다 업데이트 (더 자주)
                     progress_val = 30 + int((i / len(dollar_sheets)) * 20)  # 30-50% 범위
                     progress.setValue(progress_val)
-                    progress.setLabelText(f"📋 시트 분류 중... ({i+1}/{len(dollar_sheets)}) - {sheet_info['name']}")
+                    progress.setLabelText(f"시트 분류 중... ({i+1}/{len(dollar_sheets)}) - {sheet_info['name']}")
                     QApplication.processEvents()
 
                     # 취소 확인
@@ -2931,7 +2932,7 @@ class DBExcelEditor(QMainWindow):
                 logging.info(f"  그룹 '{group_name}': FileInfo {fileinfo_count}개, CalList {callist_count}개")
 
             progress.setValue(50)
-            progress.setLabelText(f"🔥 C코드 생성 시작... ({len(d_xls)}개 그룹)")
+            progress.setLabelText(f"C코드 생성 시작... ({len(d_xls)}개 그룹)")
             QApplication.processEvents()
 
             self.statusBar.showMessage(f"총 {len(d_xls)}개 그룹에 대한 코드 생성 시작...")
@@ -2941,7 +2942,7 @@ class DBExcelEditor(QMainWindow):
                 # 진행률 업데이트 (코드 생성 단계)
                 progress_val = 50 + int((group_idx / len(d_xls)) * 45)  # 50-95% 범위
                 progress.setValue(progress_val)
-                progress.setLabelText(f"🔥 '{group_name}' 그룹 C코드 생성 중 ({group_idx+1}/{len(d_xls)})")
+                progress.setLabelText(f"'{group_name}' 그룹 C코드 생성 중 ({group_idx+1}/{len(d_xls)})")
                 QApplication.processEvents()
 
                 # 취소 확인
@@ -3027,12 +3028,13 @@ class DBExcelEditor(QMainWindow):
                         if progress.wasCanceled():
                             raise InterruptedError("사용자가 코드 생성을 취소했습니다.")
 
-                        # 전체 진행률 계산 (그룹별 진행률 반영)
-                        group_progress = 50 + int((group_idx / len(d_xls)) * 45)  # 50-95% 범위
-                        total_progress = min(95, group_progress + int(progress_val * 0.45 / 100))
+                        # 전체 진행률 계산 (그룹별 진행률 반영) - 더 세밀하게
+                        group_base_progress = 50 + int((group_idx / len(d_xls)) * 40)  # 50-90% 범위
+                        group_detail_progress = int(progress_val * 0.4 / 100)  # 각 그룹 내 세부 진행률
+                        total_progress = min(90, group_base_progress + group_detail_progress)
 
                         progress.setValue(total_progress)
-                        progress.setLabelText(f"🔥 [{group_idx+1}/{len(d_xls)}] {group_name}: {message}")
+                        progress.setLabelText(f"[{group_idx+1}/{len(d_xls)}] {group_name}: {message}")
                         QApplication.processEvents()
 
                     # 시트 정보 검증 (C# 버전과 동일한 순서)
@@ -3126,7 +3128,7 @@ class DBExcelEditor(QMainWindow):
                 logging.info("Code generation completed successfully.")
 
             progress.setValue(100)
-            progress.setLabelText(f"✅ C코드 생성 완료! {len(generated_files_info)}개 파일 생성됨")
+            progress.setLabelText(f"C코드 생성 완료! {len(generated_files_info)}개 파일 생성됨")
             QApplication.processEvents()
 
             # 잠시 완료 메시지 표시
@@ -3178,6 +3180,7 @@ class DBExcelEditor(QMainWindow):
             # 진행률 대화상자 생성
             from PySide6.QtWidgets import QProgressDialog
             progress = QProgressDialog(f"다중 DB 코드 생성 중... (0/{len(selected_dbs)})", "취소", 0, len(selected_dbs), self)
+            progress.setWindowTitle("AutoCalEditor - 다중 DB 코드 생성")
             progress.setWindowModality(Qt.WindowModal)
             progress.setMinimumDuration(0)
             progress.show()

@@ -280,7 +280,7 @@ class CalList:
             else:
                 batch_size = 200   # 소량: 200행씩 (기존 100에서 2배 증가)
 
-            logging.info(f"⚡ 시트 {self.ShtName}: 최적화된 배치 크기 {batch_size}로 {total_rows}행 고성능 처리 시작 (완전 데이터 처리 모드)")
+            logging.info(f"시트 {self.ShtName}: 최적화된 배치 크기 {batch_size}로 {total_rows}행 고성능 처리 시작 (완전 데이터 처리 모드)")
 
             # 성능 최적화: 딕셔너리 순회를 한 번만 수행하고 리스트로 저장 (결과 동일, 속도 향상)
             item_list = list(self.dItem.values())
@@ -299,7 +299,7 @@ class CalList:
                     try:
                         # 더 상세한 정보 제공
                         elapsed = time.time() - start_time
-                        progress_callback(progress, f"⚡ 시트 {self.ShtName}: {processed_rows}/{total_rows} 행 고속 처리 중 ({elapsed:.1f}초)")
+                        progress_callback(progress, f"시트 {self.ShtName}: {processed_rows}/{total_rows} 행 고속 처리 중 ({elapsed:.1f}초)")
                     except InterruptedError as e:
                         # 사용자가 취소한 경우
                         logging.info(f"시트 {self.ShtName} 처리 중 사용자가 취소함: {str(e)}")
@@ -392,7 +392,7 @@ class CalList:
                             try:
                                 # 더 상세한 정보 제공
                                 elapsed = time.time() - start_time
-                                progress_callback(progress, f"🔥 시트 {self.ShtName}: C코드 생성 중 {processed_items}/{total_items} ({elapsed:.1f}초)")
+                                progress_callback(progress, f"시트 {self.ShtName}: C코드 생성 중 {processed_items}/{total_items} ({elapsed:.1f}초)")
                             except InterruptedError as e:
                                 # 사용자가 취소한 경우
                                 logging.info(f"시트 {self.ShtName} 코드 생성 중 사용자가 취소함: {str(e)}")
@@ -412,7 +412,7 @@ class CalList:
             logging.error(traceback.format_exc())
             raise
 
-        logging.info(f"🎉 시트 {self.ShtName} 고성능 ReadCalList 완료 (소요시간: {time.time() - start_time:.1f}초)")
+        logging.info(f"시트 {self.ShtName} 고성능 ReadCalList 완료 (소요시간: {time.time() - start_time:.1f}초)")
 
     def process_batch_vectorized(self, batch_start, batch_end, item_list):
         """🚀 벡터화된 배치 처리 (고성능 최적화 버전)"""
