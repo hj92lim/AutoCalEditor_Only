@@ -371,7 +371,7 @@ class DBHandlerV2:
                 return []
 
             max_row, max_col, cell_count = result['max_row'], result['max_col'], result['cell_count']
-            logging.debug(f"시트 {sheet_id}: {max_row+1}x{max_col+1} 크기, {cell_count}개 셀")
+            # 로깅 제거로 성능 향상
 
             # 2. 희소 행렬로 초기화 (메모리 효율적)
             sheet_data = [["" for _ in range(max_col + 1)] for _ in range(max_row + 1)]
@@ -411,10 +411,9 @@ class DBHandlerV2:
 
                 offset += batch_size
 
-                # 대용량 데이터 처리 시 주기적 가비지 컬렉션
+                # 대용량 데이터 처리 시 주기적 가비지 컬렉션 (로깅 제거)
                 if offset % DatabaseConstants.GC_INTERVAL_CELLS == 0:
                     gc.collect()
-                    logging.debug(f"시트 {sheet_id}: {offset}개 셀 처리 완료")
 
             logging.info(f"시트 {sheet_id} 데이터 로드 완료: {max_row+1}x{max_col+1}, {cell_count}개 셀")
             return sheet_data
@@ -522,7 +521,7 @@ class DBHandlerV2:
             # 기존 시트 데이터 삭제
             delete_result = self.cursor.execute("DELETE FROM cells WHERE sheet_id = ?", (sheet_id,))
             deleted_count = delete_result.rowcount
-            logging.debug(f"시트 {sheet_id}: 기존 {deleted_count}개 셀 삭제")
+            # 로깅 제거로 성능 향상
 
             # 새 데이터 준비 (빈 값 제외) - Cython 최적화 활성화
             try:
@@ -672,7 +671,7 @@ class DBHandlerV2:
                     batch_data[row_num] = {}
                 batch_data[row_num][col_num] = value
 
-            logging.debug(f"배치 읽기 완료: 시트 {sheet_id}, 행 {start_row}-{end_row}, {len(batch_data)}개 행")
+            # 로깅 제거로 성능 향상
             return batch_data
 
         except Exception as e:

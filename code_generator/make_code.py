@@ -186,7 +186,7 @@ class MakeCode:
                 self.TIMEOUT_SECONDS,
                 self.MEMORY_LIMIT_MB
             )
-            logging.info(result)
+            # 로깅 제거로 성능 향상
 
         except IndexError as e:
             logging.error(f"시트 {sheet_name} 처리 중 인덱스 오류: {e}")
@@ -529,7 +529,7 @@ class MakeCode:
                     try:
                         # Float Suffix 안전 모드로 처리
                         processed_items = fast_write_cal_list_processing(all_temp_code_items)
-                        logging.info(f"✓ Cython 최적화로 {len(processed_items)}개 코드 항목 처리 완료")
+                        # 로깅 제거로 성능 향상
                     except Exception as e:
                         logging.warning(f"Cython 최적화 실패, Python 폴백 사용: {e}")
                         # Python 폴백으로 계속 진행

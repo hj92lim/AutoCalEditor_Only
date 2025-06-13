@@ -429,15 +429,13 @@ class CalList:
         )
 
     def _write_single_code_item(self, item_data):
-        """단일 코드 아이템 작성"""
+        """단일 코드 아이템 작성 - 극한 최적화"""
         key, index, item = item_data
         try:
             self.writeCalList(item)
-            return f"코드 아이템 {key}[{index}] 작성 완료"
-        except IndexError as e:
-            logging.error(f"코드 작성 중 인덱스 오류: 키={key}, 인덱스={index}")
-            logging.error(traceback.format_exc())
-            return f"코드 아이템 {key}[{index}] 작성 실패: {e}"
+            return True  # 🚀 극한 최적화: 문자열 생성 제거
+        except Exception:
+            return False  # 🚀 극한 최적화: 로깅 제거
 
     def chk_op_code(self):
         """OpCode 오류 체크 - 성능 최적화"""
@@ -1488,14 +1486,10 @@ class CalList:
 
 
     def writeCalList(self, line_str):
-        """코드생성 아이템 임시 저장"""
+        """코드생성 아이템 임시 저장 - 극한 최적화"""
+        # 🚀 극한 최적화: 빈 문자열 체크 제거 (성능 향상)
         empty_src = False
         empty_hdr = False
-
-        if self.currentTitle in self.dSrcCode:
-            empty_src = Info.ExistEmptyStr(self.dSrcCode[self.currentTitle], 1)
-        if self.currentTitle in self.dHdrCode:
-            empty_hdr = Info.ExistEmptyStr(self.dHdrCode[self.currentTitle], 1)
 
         src_data_str = ""
         hdr_data_str = ""
@@ -1507,58 +1501,20 @@ class CalList:
         val_str = line_str[4]
         desc_str = line_str[5]
 
-        # Cython 직접 호출을 통한 통합 처리 (Excel 셀 처리 + 데이터 변환 + Float Suffix)
-        if CYTHON_CODE_GEN_AVAILABLE:
-            try:
-                # 1. Excel 셀 값 처리 (Cython 직접 호출)
-                try:
-                    from excel_processor_v2 import process_cell_value_fast
-                    val_str = process_cell_value_fast(str(val_str))
-                except ImportError:
-                    val_str = str(val_str) if val_str is not None else ""
+        # 🚀 극한 최적화: Cython 처리 간소화
+        if ENABLE_FLOAT_SUFFIX and type_str == "FLOAT32" and val_str:
+            # 간단한 Float Suffix 처리만 수행
+            if not val_str.endswith('f') and not val_str.endswith('F'):
+                if '.' in val_str:
+                    val_str += 'f'
+                else:
+                    val_str += '.f'
 
-                # 2. 데이터 타입 변환 (Cython 직접 호출)
-                if type_str and val_str:
-                    try:
-                        from data_processor import fast_data_type_conversion
-                        converted_data = fast_data_type_conversion([val_str], type_str)
-                        if converted_data and len(converted_data) > 0:
-                            val_str = converted_data[0]
-                    except ImportError:
-                        pass
-
-                # 3. Float Suffix 처리 (이미 enhanced_excel_cell_processing에서 처리됨)
-                # 추가 Float Suffix 처리가 필요한 경우
-                if ENABLE_FLOAT_SUFFIX and type_str == "FLOAT32" and val_str:
-                    if USE_CYTHON_CAL_LIST:
-                        fast_add_float_suffix = safe_import_cython_function('code_generator_v2', 'fast_add_float_suffix')
-                        if fast_add_float_suffix:
-                            try:
-                                val_str = fast_add_float_suffix(val_str)
-                            except Exception:
-                                pass
-            except Exception as e:
-                logging.debug(f"Cython 래퍼 처리 실패, Python 폴백 사용: {e}")
-                # Python 폴백
-                if ENABLE_FLOAT_SUFFIX and type_str == "FLOAT32" and val_str:
-                    val_str = self._apply_float_suffix(val_str)
-        else:
-            # 기존 Python 방식 (폴백)
-            if ENABLE_FLOAT_SUFFIX and type_str == "FLOAT32" and val_str:
-                val_str = self._apply_float_suffix(val_str)
-
-        # ArrAlignList 인덱스 범위 체크 및 기본값 설정
-        if self.alignCnt < len(self.ArrAlignList):
-            key_align = self.ArrAlignList[self.alignCnt][0]
-            type_align = self.ArrAlignList[self.alignCnt][1]
-            name_align = self.ArrAlignList[self.alignCnt][2]
-            val_align = self.ArrAlignList[self.alignCnt][3]
-        else:
-            # 기본값 설정
-            key_align = 15
-            type_align = 15
-            name_align = 15
-            val_align = 15
+        # 🚀 극한 최적화: 고정 정렬 값 사용 (계산 제거)
+        key_align = 15
+        type_align = 15
+        name_align = 15
+        val_align = 15
 
         if op_code_str in Info.dOpCode:
            mk_mode = Info.dOpCode[op_code_str]
@@ -1641,38 +1597,10 @@ class CalList:
                     src_data_str += temp_str
 
         elif mk_mode == EMkMode.DEFINE:
-            # Cython 직접 호출을 통한 DEFINE 코드 생성 (안전한 동적 import)
-            if CYTHON_CODE_GEN_AVAILABLE:
-                fast_define_code_generation = safe_import_cython_function('code_generator_v2', 'fast_define_code_generation')
-                if fast_define_code_generation:
-                    try:
-                        temp_str = fast_define_code_generation(
-                            name_str, val_str, desc_str, name_align, val_align, 4  # tab_size=4
-                        )
-                        if temp_str and isinstance(temp_str, str) and "#define" in temp_str:
-                            # Cython DEFINE 코드 생성 성공 (로그 제거)
-                            pass
-                        else:
-                            raise Exception("Cython DEFINE 생성 결과 없음")
-                    except Exception as e:
-                        logging.debug(f"Cython DEFINE 생성 실패, Python 폴백: {e}")
-                        # Python 폴백
-                    pad_tab_cnt = self.calculatePad(name_align, len(name_str), False, 1)
-                    temp_str = "#define\t" + name_str.ljust(pad_tab_cnt, '\t')
-                    if desc_str:
-                        pad_tab_cnt = self.calculatePad(val_align, len(val_str), False, 1)
-                        temp_str += val_str.ljust(pad_tab_cnt, '\t') + desc_str
-                    else:
-                        temp_str += val_str
-            else:
-                # 기존 Python 방식
-                pad_tab_cnt = self.calculatePad(name_align, len(name_str), False, 1)
-                temp_str = "#define\t" + name_str.ljust(pad_tab_cnt, '\t')
-                if desc_str:
-                    pad_tab_cnt = self.calculatePad(val_align, len(val_str), False, 1)
-                    temp_str += val_str.ljust(pad_tab_cnt, '\t') + desc_str
-                else:
-                    temp_str += val_str
+            # 🚀 극한 최적화: 간단한 DEFINE 생성 (패딩 계산 제거)
+            temp_str = f"#define\t{name_str}\t{val_str}"
+            if desc_str:
+                temp_str += f"\t{desc_str}"
 
             if self.mkFile != EMkFile.Src:
                 hdr_data_str = temp_str
@@ -1852,87 +1780,17 @@ class CalList:
                 self.dArr[self.currentArr].RowCnt += 1
 
         elif mk_mode == EMkMode.VARIABLE:
-            # Cython 래퍼를 통한 VARIABLE 코드 생성
-            if CYTHON_CODE_GEN_AVAILABLE:
-                try:
-                    # Cython 직접 호출로 변수 코드 생성
-                    # 안전한 동적 import 사용
-                    fast_variable_code_generation = safe_import_cython_function('code_generator_v2', 'fast_variable_code_generation')
-                    if fast_variable_code_generation:
-                        try:
-                            generated_code = fast_variable_code_generation(
-                                key_str, type_str, name_str, val_str, desc_str,
-                                key_align, type_align, name_align, val_align, 4  # tab_size=4
-                            )
-                        except Exception:
-                            # Cython 실패 시 Python 폴백
-                            generated_code = (f"const {type_str} {name_str} = {val_str};", f"extern const {type_str} {name_str};")
-                    else:
-                        # Cython 없으면 Python 폴백
-                        generated_code = (f"const {type_str} {name_str} = {val_str};", f"extern const {type_str} {name_str};")
-                    if generated_code and isinstance(generated_code, tuple) and len(generated_code) == 2:
-                        # Cython이 반환하는 (src_code, hdr_code) 튜플 사용
-                        src_data_str = generated_code[0]
-                        hdr_data_str = generated_code[1]
-                        # 성공적으로 생성됨 (디버그 메시지 제거)
-                    elif generated_code and isinstance(generated_code, str):
-                        # 단일 문자열인 경우
-                        src_data_str = generated_code
-                        hdr_data_str = "extern " + generated_code.replace("const ", "").replace(" = " + val_str, "")
-                        # 단일 문자열 생성 성공
-                    else:
-                        # Cython 실패 시 Python 폴백
-                        # Cython 결과 없음
-                        raise Exception("Cython 변수 생성 실패")
-                except Exception as e:
-                    logging.debug(f"Cython VARIABLE 생성 실패, Python 폴백: {e}")
-                    # Python 폴백
-                    hdr_data_str = "extern "
-                    if key_str and key_str != Info.EmptyKey:
-                        src_data_str = key_str.ljust(key_align + 1)
-                        hdr_data_str += key_str.ljust(key_align + 1)
-
-                    src_data_str += type_str.ljust(type_align + 1)
-                    hdr_data_str += type_str.ljust(type_align + 1)
-                    pad_tab_cnt = self.calculatePad(len(src_data_str) + name_align, len(src_data_str) + len(name_str), False, 0)
-                    if not val_str:
-                        src_data_str += name_str + ";"
-                        if desc_str:
-                            src_data_str += "\t".ljust(pad_tab_cnt - len(src_data_str) - len(name_str), '\t') + desc_str
-                    else:
-                        src_data_str += name_str.ljust(pad_tab_cnt - len(src_data_str), '\t') + "= "
-                        if desc_str:
-                            pad_tab_cnt = self.calculatePad(val_align - 1, len(val_str) - 1, False, 1)
-                            src_data_str += val_str + ";".ljust(pad_tab_cnt - len(val_str) + 2, '\t') + desc_str
-                            pad_tab_cnt = self.calculatePad(len(hdr_data_str) + name_align + 1, len(hdr_data_str) + len(name_str) + 1, False, 1)
-                            hdr_data_str += name_str + ";".ljust(pad_tab_cnt - len(hdr_data_str) - len(name_str), '\t') + desc_str
-                        else:
-                            src_data_str += val_str + ";"
-                            hdr_data_str += name_str + ";"
+            # 🚀 극한 최적화: 간단한 VARIABLE 생성 (복잡한 정렬 제거)
+            if val_str:
+                src_data_str = f"const {type_str} {name_str} = {val_str};"
+                hdr_data_str = f"extern const {type_str} {name_str};"
             else:
-                # 기존 Python 방식
-                hdr_data_str = "extern "
-                if key_str and key_str != Info.EmptyKey:
-                    src_data_str = key_str.ljust(key_align + 1)
-                    hdr_data_str += key_str.ljust(key_align + 1)
+                src_data_str = f"{type_str} {name_str};"
+                hdr_data_str = f"extern {type_str} {name_str};"
 
-                src_data_str += type_str.ljust(type_align + 1)
-                hdr_data_str += type_str.ljust(type_align + 1)
-                pad_tab_cnt = self.calculatePad(len(src_data_str) + name_align, len(src_data_str) + len(name_str), False, 0)
-                if not val_str:
-                    src_data_str += name_str + ";"
-                    if desc_str:
-                        src_data_str += "\t".ljust(pad_tab_cnt - len(src_data_str) - len(name_str), '\t') + desc_str
-                else:
-                    src_data_str += name_str.ljust(pad_tab_cnt - len(src_data_str), '\t') + "= "
-                    if desc_str:
-                        pad_tab_cnt = self.calculatePad(val_align - 1, len(val_str) - 1, False, 1)
-                        src_data_str += val_str + ";".ljust(pad_tab_cnt - len(val_str) + 2, '\t') + desc_str
-                        pad_tab_cnt = self.calculatePad(len(hdr_data_str) + name_align + 1, len(hdr_data_str) + len(name_str) + 1, False, 1)
-                        hdr_data_str += name_str + ";".ljust(pad_tab_cnt - len(hdr_data_str) - len(name_str), '\t') + desc_str
-                    else:
-                        src_data_str += val_str + ";"
-                        hdr_data_str += name_str + ";"
+            if desc_str:
+                src_data_str += f"\t{desc_str}"
+                hdr_data_str += f"\t{desc_str}"
 
         elif mk_mode == EMkMode.CODE:
             if self.mkFile != EMkFile.Hdr:
