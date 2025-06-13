@@ -2,7 +2,7 @@ import sys
 import os
 import logging
 import traceback
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any, Tuple
 # test
 # Qt 폰트 경고 메시지 숨기기 (간단한 해결책)
 os.environ['QT_LOGGING_RULES'] = 'qt.qpa.fonts=false'
