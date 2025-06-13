@@ -144,6 +144,77 @@ class MakeCode:
 
         return err_flag
 
+    def ReadXlstoCodeBatch(self, batch_sheet_data, progress_callback=None):
+        """🚀 획기적인 배치 처리: 모든 시트를 동시에 고속 처리"""
+        import time
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        try:
+            start_time = time.time()
+            total_sheets = len(batch_sheet_data)
+            processed_sheets = 0
+
+            if progress_callback:
+                progress_callback(10, f"배치 처리 시작: {total_sheets}개 시트")
+
+            # 🔥 핵심: 병렬 처리로 모든 시트를 동시에 처리
+            with ThreadPoolExecutor(max_workers=min(4, total_sheets)) as executor:
+                # 각 시트별로 병렬 작업 제출
+                future_to_sheet = {}
+                for sheet_name, sheet_data in batch_sheet_data.items():
+                    # CalList 객체 찾기
+                    cal_list_obj = None
+                    for cl in self.cl:
+                        if cl.ShtName == sheet_name:
+                            cal_list_obj = cl
+                            break
+
+                    if cal_list_obj:
+                        future = executor.submit(self._process_single_sheet_fast, cal_list_obj, sheet_data)
+                        future_to_sheet[future] = sheet_name
+
+                # 완료된 작업들 수집
+                for future in as_completed(future_to_sheet):
+                    sheet_name = future_to_sheet[future]
+                    try:
+                        result = future.result()
+                        processed_sheets += 1
+
+                        if progress_callback:
+                            progress_percent = 10 + int((processed_sheets / total_sheets) * 60)  # 10-70%
+                            progress_callback(progress_percent, f"시트 처리 완료: {sheet_name} ({processed_sheets}/{total_sheets})")
+
+                    except Exception as e:
+                        logging.error(f"시트 '{sheet_name}' 배치 처리 실패: {e}")
+
+            elapsed = time.time() - start_time
+            logging.info(f"🚀 배치 처리 완료: {total_sheets}개 시트, {elapsed:.2f}초")
+
+            if progress_callback:
+                progress_callback(70, f"배치 처리 완료 ({elapsed:.1f}초)")
+
+        except Exception as e:
+            logging.error(f"배치 처리 중 오류: {e}")
+            # 폴백: 기존 방식으로 처리
+            self.ReadXlstoCode(progress_callback)
+
+    def _process_single_sheet_fast(self, cal_list_obj, sheet_data):
+        """단일 시트 고속 처리 (병렬 처리용)"""
+        try:
+            # 시트 데이터 설정
+            cal_list_obj.shtData = sheet_data
+
+            # 🔥 핵심: 대량 배치로 한 번에 처리
+            total_rows = len(sheet_data) if sheet_data else 0
+            if total_rows > 0:
+                # 배치 크기를 크게 설정 (전체 시트를 한 번에)
+                cal_list_obj.ReadCalList(batch_size=min(total_rows, 5000))
+
+            return True
+        except Exception as e:
+            logging.error(f"시트 '{cal_list_obj.ShtName}' 고속 처리 실패: {e}")
+            return False
+
     def ReadXlstoCode(self, progress_callback=None):
         """엑셀 파일 읽고 코드 생성 - 응답성 개선"""
         import time

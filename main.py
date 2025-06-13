@@ -2742,6 +2742,7 @@ class DBExcelEditor(QMainWindow):
 
         try:
             # 코드 생성 시작 시간 기록
+            import time
             generation_start_time = time.time()
 
             # 진행률 대화상자 생성 - 개선된 사용자 경험
@@ -3079,9 +3080,27 @@ class DBExcelEditor(QMainWindow):
 
                     target_file_name = f"{base_name}.c"
 
-                    # 코드 읽기 및 변환 - 진행률 콜백 사용
-                    make_code.ReadXlstoCode(detailed_progress_callback)
-                    make_code.ConvXlstoCode(source_file_name, target_file_name, detailed_progress_callback)
+                    # 🚀 획기적인 성능 개선: 대량 배치 처리
+                    detailed_progress_callback(10, "시트 데이터 대량 로드 중...")
+
+                    # 모든 시트 데이터를 한 번에 메모리로 로드
+                    batch_sheet_data = {}
+                    for cal_sheet in current_sheet_surrogate.CalListSht:
+                        if hasattr(cal_sheet, 'Data') and cal_sheet.Data:
+                            batch_sheet_data[cal_sheet.Name] = cal_sheet.Data
+
+                    detailed_progress_callback(30, "고속 배치 처리 시작...")
+
+                    # 🔥 핵심: 배치 처리로 모든 시트를 동시에 처리
+                    if batch_sheet_data:
+                        # 대량 배치 처리 모드
+                        make_code.ReadXlstoCodeBatch(batch_sheet_data, detailed_progress_callback)
+                        detailed_progress_callback(70, "코드 변환 중...")
+                        make_code.ConvXlstoCode(source_file_name, target_file_name, detailed_progress_callback)
+                    else:
+                        # 폴백: 기존 방식
+                        make_code.ReadXlstoCode(detailed_progress_callback)
+                        make_code.ConvXlstoCode(source_file_name, target_file_name, detailed_progress_callback)
 
                     # 변환 중 오류 확인
                     if Info.ErrList:

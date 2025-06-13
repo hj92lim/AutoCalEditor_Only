@@ -248,8 +248,8 @@ class CalList:
 
         return err_flag
 
-    def ReadCalList(self, progress_callback=None):
-        """아이템리스트 read 후 임시 코드 생성 - 응답성 개선"""
+    def ReadCalList(self, progress_callback=None, batch_size=None):
+        """아이템리스트 read 후 임시 코드 생성 - 🚀 대용량 배치 처리 지원"""
         import time
         from PySide6.QtWidgets import QApplication
 
@@ -266,19 +266,25 @@ class CalList:
             total_rows = len(self.shtData) - self.itemStartPos.Row
             processed_rows = 0
 
-            # 🚀 초고속 배치 처리 크기 최적화 (점진적 증가 방식)
-            if total_rows > 50000:
-                batch_size = 2500  # 초대용량: 2500행씩 (기존 1000에서 2.5배 증가)
-            elif total_rows > 10000:
-                batch_size = 2000  # 대용량: 2000행씩
-            elif total_rows > 5000:
-                batch_size = 1500  # 대중량: 1500행씩
-            elif total_rows > 2000:
-                batch_size = 1000  # 중대량: 1000행씩
-            elif total_rows > 1000:
-                batch_size = 500   # 중간: 500행씩 (기존 300에서 67% 증가)
+            # 🚀 초고속 배치 처리 크기 최적화 (매개변수 우선, 없으면 자동 계산)
+            if batch_size is None:
+                # 자동 배치 크기 계산 (점진적 증가 방식)
+                if total_rows > 50000:
+                    batch_size = 2500  # 초대용량: 2500행씩 (기존 1000에서 2.5배 증가)
+                elif total_rows > 10000:
+                    batch_size = 2000  # 대용량: 2000행씩
+                elif total_rows > 5000:
+                    batch_size = 1500  # 대중량: 1500행씩
+                elif total_rows > 2000:
+                    batch_size = 1000  # 중대량: 1000행씩
+                elif total_rows > 1000:
+                    batch_size = 500   # 중간: 500행씩 (기존 300에서 67% 증가)
+                else:
+                    batch_size = 200   # 소량: 200행씩 (기존 100에서 2배 증가)
             else:
-                batch_size = 200   # 소량: 200행씩 (기존 100에서 2배 증가)
+                # 🔥 대용량 배치 처리: 전달받은 배치 크기 사용 (획기적 성능 향상)
+                batch_size = min(batch_size, total_rows)  # 전체 행 수를 초과하지 않도록
+                logging.info(f"🚀 대용량 배치 모드: {batch_size}행씩 처리 (전체 {total_rows}행)")
 
             logging.info(f"시트 {self.ShtName}: 최적화된 배치 크기 {batch_size}로 {total_rows}행 고성능 처리 시작 (완전 데이터 처리 모드)")
 
