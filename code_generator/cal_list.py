@@ -1501,20 +1501,22 @@ class CalList:
         val_str = line_str[4]
         desc_str = line_str[5]
 
-        # 🚀 극한 최적화: Cython 처리 간소화
+        # 🚀 성능 최적화: 올바른 Float Suffix 처리
         if ENABLE_FLOAT_SUFFIX and type_str == "FLOAT32" and val_str:
-            # 간단한 Float Suffix 처리만 수행
-            if not val_str.endswith('f') and not val_str.endswith('F'):
-                if '.' in val_str:
-                    val_str += 'f'
-                else:
-                    val_str += '.f'
+            val_str = self._apply_float_suffix(val_str)
 
-        # 🚀 극한 최적화: 고정 정렬 값 사용 (계산 제거)
-        key_align = 15
-        type_align = 15
-        name_align = 15
-        val_align = 15
+        # 🚀 성능 최적화: 정렬 값 복원 (품질 유지)
+        if self.alignCnt < len(self.ArrAlignList):
+            key_align = self.ArrAlignList[self.alignCnt][0]
+            type_align = self.ArrAlignList[self.alignCnt][1]
+            name_align = self.ArrAlignList[self.alignCnt][2]
+            val_align = self.ArrAlignList[self.alignCnt][3]
+        else:
+            # 기본값 설정
+            key_align = 15
+            type_align = 15
+            name_align = 15
+            val_align = 15
 
         if op_code_str in Info.dOpCode:
            mk_mode = Info.dOpCode[op_code_str]
@@ -1597,10 +1599,14 @@ class CalList:
                     src_data_str += temp_str
 
         elif mk_mode == EMkMode.DEFINE:
-            # 🚀 극한 최적화: 간단한 DEFINE 생성 (패딩 계산 제거)
-            temp_str = f"#define\t{name_str}\t{val_str}"
+            # 🚀 성능 최적화: 올바른 DEFINE 생성 (정렬 복원)
+            pad_tab_cnt = self.calculatePad(name_align, len(name_str), False, 1)
+            temp_str = "#define\t" + name_str.ljust(pad_tab_cnt, '\t')
             if desc_str:
-                temp_str += f"\t{desc_str}"
+                pad_tab_cnt = self.calculatePad(val_align, len(val_str), False, 1)
+                temp_str += val_str.ljust(pad_tab_cnt, '\t') + desc_str
+            else:
+                temp_str += val_str
 
             if self.mkFile != EMkFile.Src:
                 hdr_data_str = temp_str
@@ -1780,17 +1786,29 @@ class CalList:
                 self.dArr[self.currentArr].RowCnt += 1
 
         elif mk_mode == EMkMode.VARIABLE:
-            # 🚀 극한 최적화: 간단한 VARIABLE 생성 (복잡한 정렬 제거)
-            if val_str:
-                src_data_str = f"const {type_str} {name_str} = {val_str};"
-                hdr_data_str = f"extern const {type_str} {name_str};"
-            else:
-                src_data_str = f"{type_str} {name_str};"
-                hdr_data_str = f"extern {type_str} {name_str};"
+            # 🚀 성능 최적화: 올바른 VARIABLE 생성 (정렬 복원)
+            hdr_data_str = "extern "
+            if key_str and key_str != Info.EmptyKey:
+                src_data_str = key_str.ljust(key_align + 1)
+                hdr_data_str += key_str.ljust(key_align + 1)
 
-            if desc_str:
-                src_data_str += f"\t{desc_str}"
-                hdr_data_str += f"\t{desc_str}"
+            src_data_str += type_str.ljust(type_align + 1)
+            hdr_data_str += type_str.ljust(type_align + 1)
+            pad_tab_cnt = self.calculatePad(len(src_data_str) + name_align, len(src_data_str) + len(name_str), False, 0)
+            if not val_str:
+                src_data_str += name_str + ";"
+                if desc_str:
+                    src_data_str += "\t".ljust(pad_tab_cnt - len(src_data_str) - len(name_str), '\t') + desc_str
+            else:
+                src_data_str += name_str.ljust(pad_tab_cnt - len(src_data_str), '\t') + "= "
+                if desc_str:
+                    pad_tab_cnt = self.calculatePad(val_align - 1, len(val_str) - 1, False, 1)
+                    src_data_str += val_str + ";".ljust(pad_tab_cnt - len(val_str) + 2, '\t') + desc_str
+                    pad_tab_cnt = self.calculatePad(len(hdr_data_str) + name_align + 1, len(hdr_data_str) + len(name_str) + 1, False, 1)
+                    hdr_data_str += name_str + ";".ljust(pad_tab_cnt - len(hdr_data_str) - len(name_str), '\t') + desc_str
+                else:
+                    src_data_str += val_str + ";"
+                    hdr_data_str += name_str + ";"
 
         elif mk_mode == EMkMode.CODE:
             if self.mkFile != EMkFile.Hdr:
