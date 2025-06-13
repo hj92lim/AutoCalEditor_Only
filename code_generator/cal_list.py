@@ -280,7 +280,7 @@ class CalList:
             else:
                 batch_size = 200   # 소량: 200행씩 (기존 100에서 2배 증가)
 
-            logging.info(f"⚡ 시트 {self.ShtName}: 최적화된 배치 크기 {batch_size}로 {total_rows}행 고성능 처리 시작")
+            logging.info(f"⚡ 시트 {self.ShtName}: 최적화된 배치 크기 {batch_size}로 {total_rows}행 고성능 처리 시작 (완전 데이터 처리 모드)")
 
             # 성능 최적화: 딕셔너리 순회를 한 번만 수행하고 리스트로 저장 (결과 동일, 속도 향상)
             item_list = list(self.dItem.values())
@@ -318,9 +318,12 @@ class CalList:
                 # 병렬 처리 여부 결정 (중간 크기 이상 배치에서만)
                 use_parallel_for_batch = (batch_end - batch_start) >= 500 and total_rows > 2000
 
-                if use_cython:
+                # 🚨 긴급 수정: Cython 함수가 실제 데이터 처리를 하지 않으므로 비활성화
+                # Cython fast_read_cal_list_processing은 행 번호만 설정하고 실제 데이터 처리(saveTempList 등)를 하지 않음
+                # 따라서 실제 데이터가 dTempCode에 저장되지 않아 빈 코드가 생성됨
+                if False:  # use_cython - 임시 비활성화
                     try:
-                        # 🔥 Cython 초고속 처리
+                        # 🔥 Cython 초고속 처리 (현재 불완전하므로 비활성화)
                         cython_result = fast_read_cal_list_processing(
                             self.shtData, batch_start, batch_end, item_list
                         )
