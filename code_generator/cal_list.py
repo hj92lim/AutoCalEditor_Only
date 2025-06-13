@@ -421,21 +421,31 @@ class CalList:
         batch_processed = 0
 
         try:
-            # 벡터화된 셀 데이터 미리 읽기 (한 번에 여러 셀 접근)
+            # 🚀 초고속 벡터화된 셀 데이터 미리 읽기 (중복 제거 최적화)
             batch_data = {}
             required_cols = set()
 
-            # 필요한 컬럼들 미리 수집
+            # 필요한 컬럼들 미리 수집 (최적화: 중복 제거)
             for item in item_list:
                 required_cols.add(item.Col)
 
-            # 배치 범위의 모든 필요한 셀을 한 번에 읽기
+            # 🔥 배치 범위의 모든 필요한 셀을 한 번에 읽기 (메모리 효율적)
             for row in range(batch_start, batch_end):
                 for col in required_cols:
-                    if row < len(self.shtData) and col < len(self.shtData[row]):
-                        batch_data[(row, col)] = self.shtData[row][col] if self.shtData[row][col] else ""
+                    # 캐시 우선 확인 (중복 읽기 방지)
+                    cache_key = (row, col)
+                    if cache_key in self.cell_cache:
+                        batch_data[cache_key] = self.cell_cache[cache_key]
                     else:
-                        batch_data[(row, col)] = ""
+                        # 직접 읽기 (범위 체크 최적화)
+                        if row < len(self.shtData) and col < len(self.shtData[row]):
+                            value = self.shtData[row][col] if self.shtData[row][col] else ""
+                        else:
+                            value = ""
+                        batch_data[cache_key] = value
+                        # 캐시에 저장 (메모리 제한 고려)
+                        if len(self.cell_cache) < 50000:  # 메모리 절약
+                            self.cell_cache[cache_key] = value
 
             # 🔥 고속 행별 처리 (벡터화된 데이터 사용)
             for row in range(batch_start, batch_end):
@@ -548,6 +558,7 @@ class CalList:
                 self.dItem["Name"].Col = self.prjtDefCol + 1
                 self.dItem["Value"].Col = self.prjtNameCol + 1
 
+                # 🔥 중복 읽기 제거: 이미 cached_read_cell 사용 중 (최적화됨)
                 prjt_def = self.cached_read_cell(row, self.prjtDefCol + 1)
                 prjt_name = self.cached_read_cell(row, self.prjtNameCol + 1)
 
@@ -559,7 +570,7 @@ class CalList:
         self.dItem["Description"].Str = self.cached_read_cell(row, self.dItem["Description"].Col)
 
     def chkArrInfo(self, row):
-        """배열 타입 체크"""
+        """배열 타입 체크 - 🚀 중복 읽기 제거 최적화"""
         arr_type = EArrType.SizeErr
         arr_size_int = SCellPos(0, 0)
 
@@ -567,8 +578,9 @@ class CalList:
         type2 = False
 
         arr_size_str = ""
-        arr_size_str1 = Info.ReadCell(self.shtData, row + 1, self.memDfltCol)
-        arr_size_str2 = Info.ReadCell(self.shtData, row, self.dItem["Value"].Col)
+        # 🔥 중복 읽기 제거: cached_read_cell 사용
+        arr_size_str1 = self.cached_read_cell(row + 1, self.memDfltCol)
+        arr_size_str2 = self.cached_read_cell(row, self.dItem["Value"].Col)
 
         if arr_size_str1.startswith("[") and arr_size_str1.endswith("]"):
             type1 = True
@@ -604,10 +616,10 @@ class CalList:
         return arr_type
 
     def chkArrSize(self, row, arr_type, arr_size):
-        """배열 사이즈 체크"""
+        """배열 사이즈 체크 - 🚀 문자열 처리 최적화"""
         arr_size_int = SCellPos(0, 0)
-        arr_size_str = arr_size.replace("[", "")
-        arr_size_str = arr_size_str.replace("]", "")
+        # 🔥 문자열 처리 최적화: 한 번에 처리
+        arr_size_str = arr_size.strip("[]")
 
         if "," in arr_size_str:
             row_col_split = arr_size_str.split(',')
@@ -680,28 +692,26 @@ class CalList:
         self.dArr[self.currentArr].ArrayDataType = self.dItem["Type"].Str
 
     def chkArrtype(self, row, arr_size):
-        """배열 타입 확인"""
-        rt = False
+        """배열 타입 확인 - 🚀 중복 읽기 제거 및 조기 종료 최적화"""
+        # 🔥 벡터화된 셀 읽기로 성능 최적화
+        cols_to_check = list(range(self.memDfltCol + 1, self.memDfltCol + arr_size.Col))
 
-        for col in range(self.memDfltCol + 1, self.memDfltCol + arr_size.Col):
-            cell_str = Info.ReadCell(self.shtData, row, col)
-            if cell_str:
-                rt = True
-                break
+        # 첫 번째 행 체크 (벡터화)
+        for col in cols_to_check:
+            if self.cached_read_cell(row, col):
+                return True
 
-            cell_str = Info.ReadCell(self.shtData, row + 1, col)
-            if cell_str:
-                rt = True
-                break
+        # 두 번째 행 체크 (벡터화)
+        for col in cols_to_check:
+            if self.cached_read_cell(row + 1, col):
+                return True
 
-        if not rt:
-            for r in range(row + 2, row + 2 + arr_size.Row):
-                cell_str = Info.ReadCell(self.shtData, r, self.memDfltCol)
-                if cell_str:
-                    rt = True
-                    break
+        # 세로 방향 체크 (필요한 경우만)
+        for r in range(row + 2, row + 2 + arr_size.Row):
+            if self.cached_read_cell(r, self.memDfltCol):
+                return True
 
-        return rt
+        return False
 
     def readArrMem(self, row):
         """배열 멤버 변수 읽기"""
@@ -726,8 +736,8 @@ class CalList:
         # 첫 번째 행 확인 (인덱스/레이블 행)
         is_first_row = (row == self.dArr[self.currentArr].StartPos.Row)
 
-        # 첫 번째 행의 첫 번째 셀 확인 (타이틀 셀 여부 확인용)
-        first_cell_content = Info.ReadCell(self.shtData, row, self.dArr[self.currentArr].StartPos.Col)
+        # 첫 번째 행의 첫 번째 셀 확인 (타이틀 셀 여부 확인용) - 🚀 캐시 사용
+        first_cell_content = self.cached_read_cell(row, self.dArr[self.currentArr].StartPos.Col)
         is_label_row = is_first_row or "Idx" in first_cell_content
 
         # 2차원 배열 확인
@@ -762,10 +772,10 @@ class CalList:
                 temp_line = []
                 col = self.dArr[self.currentArr].StartPos.Col
 
-        # 기존 Python 버전 (폴백)
+        # 🚀 최적화된 Python 버전 (중복 읽기 제거)
         while col < self.dArr[self.currentArr].EndPos.Col + 1:
-            # 셀 데이터 읽기
-            cell_str = Info.ReadCell(self.shtData, row, col)
+            # 🔥 셀 데이터 읽기 - 캐시 사용으로 중복 제거
+            cell_str = self.cached_read_cell(row, col)
 
             # 주석 위치인지 확인
             is_annotation = (cell_str == Info.ReadingXlsRule)
@@ -823,7 +833,11 @@ class CalList:
                 self.dArr[self.currentArr].AlignmentSize.append(0)
 
             temp_line.append(cell_str)
-            cell_lenth = len(cell_str.encode('utf-8'))
+            # 🔥 문자열 길이 계산 최적화: ASCII 문자는 빠른 계산
+            if cell_str.isascii():
+                cell_lenth = len(cell_str)
+            else:
+                cell_lenth = len(cell_str.encode('utf-8'))
 
             # 이제 안전하게 인덱스 접근 가능
             if cell_lenth > self.dArr[self.currentArr].AlignmentSize[temp_col_pos]:
