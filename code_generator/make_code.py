@@ -1,16 +1,17 @@
 from typing import Dict, List, Optional
-from PySide6.QtWidgets import QListWidget
+from PySide6.QtWidgets import QListWidget, QApplication
 import os
+import time
+import traceback
+import logging
+import sys
 from datetime import datetime
 
 from core.info import Info, EErrType, EMkFile, EMkMode, CellInfos
 from code_generator.file_info import FileInfo
 from code_generator.cal_list import CalList
-
-# 메인 코드 최상단에 추가
-import traceback
-import logging
-import sys
+from core.constants import PerformanceConstants
+from code_generator.processing_manager import get_processing_pipeline
 
 # Cython 최적화 함수들을 필요할 때 동적으로 import (안전한 방식)
 def safe_import_cython_function(module_name, function_name):
@@ -41,7 +42,13 @@ def global_exception_handler(exc_type, exc_value, exc_traceback):
 sys.excepthook = global_exception_handler
 
 class MakeCode:
-    """코드 생성 클래스"""
+    """코드 생성 클래스 - 중복 제거 적용"""
+
+    # 클래스 상수 정의 (매직 넘버 제거)
+    MEMORY_LIMIT_MB = 2048  # 2GB 메모리 제한
+    TIMEOUT_SECONDS = PerformanceConstants.CODE_GENERATION_TIMEOUT  # 타임아웃 (10분)
+    PROGRESS_WEIGHT_READ = 50  # ReadXlstoCode가 전체 진행률에서 차지하는 비중
+
     def __init__(self, of, lb_src, lb_hdr):
         self.of = of
         self.lb_src = lb_src
@@ -58,6 +65,9 @@ class MakeCode:
         self.HdrFileName = ""
         self.MkFilePath = ""
         self.prjt_def_title = ""  # 추가된 변수
+
+        # 통합 처리 파이프라인 사용 (중복 제거)
+        self.pipeline = get_processing_pipeline()
 
     def ChkShtInfo(self):
         """시트 정보 체크"""
@@ -144,21 +154,8 @@ class MakeCode:
 
         return err_flag
 
-    def ReadXlstoCode(self, progress_callback=None):
-        """엑셀 파일 읽고 코드 생성 - 응답성 개선"""
-        import time
-        import os
-        from PySide6.QtWidgets import QApplication
-
-        # psutil 모듈 확인 및 메모리 모니터링 설정
-        try:
-            import psutil
-            memory_monitoring = True
-        except ImportError:
-            logging.warning("psutil 모듈이 설치되지 않아 메모리 모니터링을 사용할 수 없습니다.")
-            memory_monitoring = False
-
-        # 시트 정보가 초기화되지 않은 경우 먼저 초기화
+    def _validate_sheet_initialization(self):
+        """시트 초기화 검증 - 단일 책임 원칙"""
         if not self.cl or len(self.cl) == 0:
             logging.warning("CalList 시트가 초기화되지 않았습니다. ChkShtInfo()를 먼저 호출합니다.")
             if self.ChkShtInfo():
@@ -166,197 +163,174 @@ class MakeCode:
                 logging.error(error_msg)
                 raise RuntimeError(error_msg)
 
-        logging.info(f"ReadXlstoCode 시작: 처리할 시트 수 = {len(self.cl)}")
-        start_time = time.time()
+    def _process_single_sheet(self, sheet_index: int, progress_callback):
+        """단일 시트 처리 - 통합 파이프라인 사용"""
+        sheet_name = self.cl[sheet_index].ShtName
 
-        if memory_monitoring:
-            process = psutil.Process(os.getpid())
-            initial_memory = process.memory_info().rss / 1024 / 1024  # MB
-        else:
-            initial_memory = 0
+        def process_sheet():
+            # 실제 시트 데이터 읽기
+            self.cl[sheet_index].ReadCalList(progress_callback)
+
+            # 프로젝트명 추가 (인덱스 일치 보장)
+            project_name = self.cl[sheet_index].PrjtNameMain if self.cl[sheet_index].PrjtNameMain else ""
+            self.PrjtList.append(project_name)
+
+            return f"시트 {sheet_name} 처리 완료"
+
+        try:
+            # 통합 파이프라인으로 처리 (중복 제거)
+            result = self.pipeline.execute_with_monitoring(
+                process_sheet,
+                f"시트 {sheet_name} 처리",
+                progress_callback,
+                self.TIMEOUT_SECONDS,
+                self.MEMORY_LIMIT_MB
+            )
+            logging.info(result)
+
+        except IndexError as e:
+            logging.error(f"시트 {sheet_name} 처리 중 인덱스 오류: {e}")
+            logging.error(traceback.format_exc())
+            print(f"시트 {sheet_name} 처리 중 인덱스 오류가 발생했습니다.")
+            # 오류가 있어도 배열 크기는 맞춰줌
+            self.PrjtList.append("")
+
+    def ReadDBtoTempCode(self, progress_callback=None):
+        """DB 데이터 읽고 임시 코드 생성 - 통합 파이프라인 적용 (함수명 정확성 개선)"""
+        # 시트 초기화 검증
+        self._validate_sheet_initialization()
 
         # PrjtList 초기화
         self.PrjtList = []
 
-        try:
-            for i in range(len(self.cl)):
-                # 진행률 콜백 호출 - 더 자주 업데이트
-                if progress_callback:
-                    progress = int((i / len(self.cl)) * 50)  # ReadXlstoCode는 전체의 50%
-                    try:
-                        # 더 상세한 정보 제공
-                        elapsed = time.time() - start_time
-                        progress_callback(progress, f"시트 처리 중: {self.cl[i].ShtName} ({i+1}/{len(self.cl)}) - {elapsed:.1f}초 경과")
-                    except InterruptedError as e:
-                        # 사용자가 취소한 경우
-                        logging.info(f"사용자가 코드 생성을 취소했습니다: {str(e)}")
-                        raise  # 예외를 상위로 전파
+        def process_all_sheets():
+            # 배치 처리로 모든 시트 처리 (중복 제거)
+            sheet_indices = list(range(len(self.cl)))
 
-                logging.info(f"시트 {i+1}/{len(self.cl)} 처리 중: {self.cl[i].ShtName}")
+            return self.pipeline.process_batch_with_progress(
+                sheet_indices,
+                lambda i: self._process_single_sheet(i, progress_callback),
+                "DB 데이터 읽기",
+                progress_callback,
+                batch_size=5  # 5개 시트마다 리소스 체크
+            )
 
-                # UI 응답성 유지 - 더 자주 호출
-                QApplication.processEvents()
+        # 통합 파이프라인으로 전체 처리
+        return self.pipeline.execute_with_monitoring(
+            process_all_sheets,
+            f"ReadDBtoTempCode (시트 수: {len(self.cl)})",
+            progress_callback,
+            self.TIMEOUT_SECONDS,
+            self.MEMORY_LIMIT_MB
+        )
 
-                # 메모리 사용량 체크 (2GB 제한)
-                if memory_monitoring:
-                    current_memory = process.memory_info().rss / 1024 / 1024  # MB
-                    if current_memory > 2048:  # 2GB
-                        logging.warning(f"메모리 사용량 초과: {current_memory:.1f}MB")
-                        raise MemoryError(f"메모리 사용량이 2GB를 초과했습니다. 현재: {current_memory:.1f}MB")
-
-                # 타임아웃 체크 (30분 제한)
-                elapsed_time = time.time() - start_time
-                if elapsed_time > 1800:  # 30분
-                    logging.warning(f"ReadXlstoCode 타임아웃: {elapsed_time:.1f}초 경과")
-                    raise TimeoutError(f"코드 생성이 30분을 초과했습니다. 현재까지 {i}/{len(self.cl)} 시트 처리 완료")
-
-                try:
-                    # 시트 처리 시작 알림
-                    if progress_callback:
-                        try:
-                            progress_callback(progress, f"시트 데이터 읽는 중: {self.cl[i].ShtName}...")
-                        except InterruptedError:
-                            raise
-
-                    # UI 응답성 유지
-                    QApplication.processEvents()
-
-                    try:
-                        self.cl[i].ReadCalList(progress_callback)
-                    except InterruptedError as e:
-                        # 사용자가 취소한 경우
-                        logging.info(f"시트 {self.cl[i].ShtName} 처리 중 사용자가 취소함: {str(e)}")
-                        raise  # 예외를 상위로 전파
-
-                    # 시트 처리 완료 알림
-                    if progress_callback:
-                        try:
-                            progress_callback(progress, f"시트 처리 완료: {self.cl[i].ShtName}")
-                        except InterruptedError:
-                            raise
-
-                    logging.info(f"시트 {self.cl[i].ShtName} 처리 완료")
-
-                    # 프로젝트명 추가 (시트별로 처리하여 인덱스 일치 보장)
-                    if self.cl[i].PrjtNameMain:
-                        self.PrjtList.append(self.cl[i].PrjtNameMain)
-                    else:
-                        # 프로젝트명이 없는 경우에도 리스트에 추가하여 인덱스 맞추기
-                        self.PrjtList.append("")
-
-                except IndexError as e:
-                    logging.error(f"시트 {self.cl[i].ShtName} 처리 중 인덱스 오류: {e}")
-                    logging.error(traceback.format_exc())
-                    print(f"시트 {self.cl[i].ShtName} 처리 중 인덱스 오류가 발생했습니다.")
-                    # 오류가 있어도 배열 크기는 맞춰줌
-                    self.PrjtList.append("")
-
-        except Exception as e:
-            logging.error(f"ReadXlstoCode 전체 오류: {e}")
-            logging.error(traceback.format_exc())
-            raise
-
-        if memory_monitoring:
-            final_memory = process.memory_info().rss / 1024 / 1024  # MB
-            memory_used = final_memory - initial_memory
-            logging.info(f"ReadXlstoCode 완료 (소요시간: {time.time() - start_time:.1f}초, 메모리 사용량: {memory_used:.1f}MB)")
-        else:
-            logging.info(f"ReadXlstoCode 완료 (소요시간: {time.time() - start_time:.1f}초)")
-
-    def ConvXlstoCode(self, source_file_name="", target_file_name="", progress_callback=None):
-        """엑셀 파일 변환하여 코드 생성 - 응답성 개선"""
-        import time
-        from PySide6.QtWidgets import QApplication
-
-        start_time = time.time()
-
+    def ConvTempCodetoC(self, source_file_name="", target_file_name="", progress_callback=None):
+        """임시 코드를 C 파일로 변환 - 통합 파이프라인 적용 (함수명 정확성 개선)"""
         # 필수 객체 유효성 검사
         if self.fi is None:
-            error_msg = "FileInfo 객체가 초기화되지 않았습니다. ReadXlstoCode()를 먼저 호출하세요."
+            error_msg = "FileInfo 객체가 초기화되지 않았습니다. ReadDBtoTempCode()를 먼저 호출하세요."
             logging.error(error_msg)
             raise RuntimeError(error_msg)
 
-        # 진행률 콜백 호출 - 더 상세한 정보 제공
-        if progress_callback:
-            try:
-                elapsed = time.time() - start_time
-                progress_callback(50, f"코드 변환 시작... ({elapsed:.1f}초 경과)")
-            except InterruptedError as e:
-                # 사용자가 취소한 경우
-                logging.info(f"코드 변환 시작 전 사용자가 취소함: {str(e)}")
-                raise  # 예외를 상위로 전파
+        # 코드 생성 단계들 정의
+        generation_steps = [
+            (self.make_conv_info_code, "코드 변환 시작", source_file_name),
+            (self.make_start_code, "시작 코드 생성"),
+            (self.make_file_info_code, "파일 정보 코드 생성", target_file_name),
+            (self.make_cal_list_code, "CAL 리스트 코드 생성"),
+            (self.make_end_code, "종료 코드 생성")
+        ]
 
-        self.make_conv_info_code(source_file_name)
-        QApplication.processEvents()
+        def execute_generation_steps():
+            results = []
+            for i, step_data in enumerate(generation_steps):
+                step_func = step_data[0]
+                step_name = step_data[1]
+                args = step_data[2:] if len(step_data) > 2 else ()
 
-        if progress_callback:
-            try:
-                elapsed = time.time() - start_time
-                progress_callback(60, f"시작 코드 생성 중... ({elapsed:.1f}초 경과)")
-            except InterruptedError as e:
-                logging.info(f"시작 코드 생성 중 사용자가 취소함: {str(e)}")
-                raise
-        self.make_start_code()
-        QApplication.processEvents()
+                # 진행률 업데이트 (50-100% 범위)
+                progress = 50 + int((i / len(generation_steps)) * 50)
+                if progress_callback:
+                    try:
+                        progress_callback(progress, f"{step_name} 중...")
+                    except InterruptedError:
+                        raise
 
-        if progress_callback:
-            try:
-                elapsed = time.time() - start_time
-                progress_callback(70, f"파일 정보 코드 생성 중... ({elapsed:.1f}초 경과)")
-            except InterruptedError as e:
-                logging.info(f"파일 정보 코드 생성 중 사용자가 취소함: {str(e)}")
-                raise
-        self.make_file_info_code(target_file_name)
-        QApplication.processEvents()
+                # UI 응답성 유지
+                self.pipeline.ui_manager.process_events_if_needed()
 
-        if progress_callback:
-            try:
-                elapsed = time.time() - start_time
-                progress_callback(85, f"CAL 리스트 코드 생성 중... ({elapsed:.1f}초 경과)")
-            except InterruptedError as e:
-                logging.info(f"CAL 리스트 코드 생성 중 사용자가 취소함: {str(e)}")
-                raise
-        self.make_cal_list_code()
-        QApplication.processEvents()
+                # 단계 실행
+                step_func(*args)
+                results.append(f"{step_name} 완료")
 
-        if progress_callback:
-            try:
-                elapsed = time.time() - start_time
-                progress_callback(95, f"종료 코드 생성 중... ({elapsed:.1f}초 경과)")
-            except InterruptedError as e:
-                logging.info(f"종료 코드 생성 중 사용자가 취소함: {str(e)}")
-                raise
-        self.make_end_code()
-        QApplication.processEvents()
+            return results
 
-        if progress_callback:
-            try:
-                elapsed = time.time() - start_time
-                progress_callback(100, f"코드 생성 완료 (총 소요시간: {elapsed:.1f}초)")
-            except InterruptedError as e:
-                logging.info(f"코드 생성 완료 단계에서 사용자가 취소함: {str(e)}")
-                raise
+        # 통합 파이프라인으로 처리
+        return self.pipeline.execute_with_monitoring(
+            execute_generation_steps,
+            "ConvTempCodetoC (C 파일 생성)",
+            progress_callback,
+            self.TIMEOUT_SECONDS,
+            self.MEMORY_LIMIT_MB
+        )
 
-        logging.info(f"ConvXlstoCode 완료 (소요시간: {time.time() - start_time:.1f}초)")
+    # 하위 호환성을 위한 래퍼 함수들 (기존 코드와의 호환성 유지)
+    def ReadXlstoCode(self, progress_callback=None):
+        """하위 호환성을 위한 래퍼 함수 - ReadDBtoTempCode 호출"""
+        logging.warning("ReadXlstoCode는 deprecated입니다. ReadDBtoTempCode를 사용하세요.")
+        return self.ReadDBtoTempCode(progress_callback)
+
+    def ConvXlstoCode(self, source_file_name="", target_file_name="", progress_callback=None):
+        """하위 호환성을 위한 래퍼 함수 - ConvTempCodetoC 호출"""
+        logging.warning("ConvXlstoCode는 deprecated입니다. ConvTempCodetoC를 사용하세요.")
+        return self.ConvTempCodetoC(source_file_name, target_file_name, progress_callback)
+
+    def _format_error_messages(self) -> List[str]:
+        """오류 메시지 포맷팅 - 단일 책임 원칙"""
+        if not Info.ErrList:
+            return ["\t\t >> 발견된 오류가 없습니다"]
+
+        error_lines = [f"\t\t=> {len(Info.ErrList)}개의 오류 발견"]
+
+        # 최대 5개까지만 표시
+        for err_msg in Info.ErrList[:5]:
+            if ':' in err_msg:
+                temp_err_msg = err_msg.split(':')
+                formatted_err = temp_err_msg[0].ljust(Info.ErrNameSize + 2) + ": " + temp_err_msg[1]
+            else:
+                formatted_err = err_msg
+            error_lines.append(f"\t\t  {formatted_err}")
+
+        # 5개 초과 시 추가 메시지
+        if len(Info.ErrList) > 5:
+            error_lines.append("\t\t  ... (추가 오류는 로그를 확인하세요)")
+
+        return error_lines
+
+    def _add_lines_to_both_lists(self, lines: List[str]):
+        """소스와 헤더 리스트에 동시 추가 - 중복 코드 제거"""
+        for line in lines:
+            self.lb_src.addItem(line)
+        for line in lines:
+            self.lb_hdr.addItem(line)
 
     def make_conv_info_code(self, source_file_name=""):
-        """소스/헤더 파일 앞 부분에 파일 생성 정보 작성"""
+        """소스/헤더 파일 앞 부분에 파일 생성 정보 작성 - 리팩토링된 버전"""
+        # 기본 정보 설정
         title = "<파일 생성 정보>"
         date = "파일 생성일 : " + datetime.now().strftime("%Y.%m.%d")
 
-        # 소스 파일명이 제공되지 않은 경우 기본값 사용
+        # 파일명 처리
         if not source_file_name:
             source_file_name = "Unknown Source File"
         else:
-            # 파일명만 추출 (경로 제거)
             source_file_name = os.path.basename(source_file_name)
 
         file_name = "대상 파일   : " + source_file_name
         err_list = "생성 시 발견된 오류 리스트"
-        no_err = "\t\t >> 발견된 오류가 없습니다"
         start_line = "\t  * "
 
-        # 파일 생성 정보 라인들 생성
+        # 기본 헤더 라인들
         conv_info_lines = [
             "/*",
             "\t" + title,
@@ -365,37 +339,18 @@ class MakeCode:
             start_line + err_list
         ]
 
-        # 오류 리스트 처리
-        if not Info.ErrList:
-            conv_info_lines.append(no_err)
-        else:
-            conv_info_lines.append(f"\t\t=> {len(Info.ErrList)}개의 오류 발견")
+        # 오류 메시지 추가
+        conv_info_lines.extend(self._format_error_messages())
 
-            # 최대 5개까지만 표시
-            for i, err_msg in enumerate(Info.ErrList[:5]):
-                if ':' in err_msg:
-                    temp_err_msg = err_msg.split(':')
-                    formatted_err = temp_err_msg[0].ljust(Info.ErrNameSize + 2) + ": " + temp_err_msg[1]
-                else:
-                    formatted_err = err_msg
-                conv_info_lines.append(f"\t\t  {formatted_err}")
+        # 마무리 라인들
+        conv_info_lines.extend(["*/", ""])
 
-            # 5개 초과 시 추가 메시지
-            if len(Info.ErrList) > 5:
-                conv_info_lines.append("\t\t  ... (추가 오류는 로그를 확인하세요)")
-
-        conv_info_lines.append("*/")
-        conv_info_lines.append("")
-
-        # 소스 및 헤더 파일 모두에 추가 - UI 배치 최적화 (한 번에 추가)
-        for line in conv_info_lines:
-            self.lb_src.addItem(line)
-        for line in conv_info_lines:
-            self.lb_hdr.addItem(line)
+        # 소스 및 헤더 파일에 추가
+        self._add_lines_to_both_lists(conv_info_lines)
 
     def make_start_code(self):
-        """시작 코드 생성 - 성능 최적화"""
-        # 소스 및 헤더 파일 시작 부분에 공통적으로 사용되는 라인
+        """시작 코드 생성 - 리팩토링된 버전"""
+        # 공통 라인들
         common_lines = [
             Info.StartAnnotation[0],
             "*                             (C) by Hyundai Motor Company LTD.                             *",
@@ -403,24 +358,22 @@ class MakeCode:
             ""
         ]
 
-        # 소스 파일 라인
+        # 소스 파일용 라인 생성
         src_lines = common_lines.copy()
-        src_lines[1:1] = ["*                                   S O U R C E   F I L E                                   *"]
+        src_lines.insert(1, "*                                   S O U R C E   F I L E                                   *")
 
-        # 헤더 파일 라인
+        # 헤더 파일용 라인 생성
         hdr_lines = common_lines.copy()
-        hdr_lines[1:1] = ["*                                   H E A D E R   F I L E                                   *"]
+        hdr_lines.insert(1, "*                                   H E A D E R   F I L E                                   *")
 
-        # 한 번에 추가
+        # 각각의 리스트에 추가
         for line in src_lines:
             self.lb_src.addItem(line)
-
         for line in hdr_lines:
             self.lb_hdr.addItem(line)
 
-    def make_file_info_code(self, target_file_name=""):
-        """파일 정보 코드 생성 - 안전성 강화"""
-        # FileInfo 객체 유효성 검사
+    def _validate_file_info(self):
+        """FileInfo 객체 유효성 검사 - 단일 책임 원칙"""
         if self.fi is None:
             error_msg = "FileInfo 객체가 초기화되지 않았습니다. ChkShtInfo()를 먼저 호출하세요."
             logging.error(error_msg)
@@ -439,36 +392,53 @@ class MakeCode:
                 logging.error(error_msg)
                 raise KeyError(error_msg)
 
-        # 타겟 파일명이 제공된 경우 파일 정보를 동적으로 수정
-        if target_file_name:
-            # 원본 파일 정보 백업
-            original_src_file = self.fi.dFileInfo["S_FILE"].Str
-            original_hdr_file = self.fi.dFileInfo["H_FILE"].Str
+    def _update_file_names_temporarily(self, target_file_name: str):
+        """파일명을 임시로 업데이트하고 원본 정보 반환"""
+        if not target_file_name:
+            return None, None
 
-            # 파일명 동적 설정
-            base_name = target_file_name.replace(".c", "").replace(".h", "")
-            self.fi.dFileInfo["S_FILE"].Str = f"{base_name}.c"
-            self.fi.dFileInfo["H_FILE"].Str = f"{base_name}.h"
+        # 원본 파일 정보 백업
+        original_src_file = self.fi.dFileInfo["S_FILE"].Str
+        original_hdr_file = self.fi.dFileInfo["H_FILE"].Str
 
+        # 파일명 동적 설정
+        base_name = target_file_name.replace(".c", "").replace(".h", "")
+        self.fi.dFileInfo["S_FILE"].Str = f"{base_name}.c"
+        self.fi.dFileInfo["H_FILE"].Str = f"{base_name}.h"
+
+        return original_src_file, original_hdr_file
+
+    def _restore_file_names(self, original_src_file: str, original_hdr_file: str):
+        """원본 파일명 복원"""
+        if original_src_file is not None and original_hdr_file is not None:
+            self.fi.dFileInfo["S_FILE"].Str = original_src_file
+            self.fi.dFileInfo["H_FILE"].Str = original_hdr_file
+
+    def make_file_info_code(self, target_file_name=""):
+        """파일 정보 코드 생성 - 리팩토링된 버전"""
+        # 유효성 검사
+        self._validate_file_info()
+
+        # 파일명 임시 업데이트
+        original_src, original_hdr = self._update_file_names_temporarily(target_file_name)
+
+        try:
             # 파일 정보 생성
             self.fi.Write()
 
-            # 원본 파일 정보 복원 (다음 파일 생성을 위해)
-            self.fi.dFileInfo["S_FILE"].Str = original_src_file
-            self.fi.dFileInfo["H_FILE"].Str = original_hdr_file
-        else:
-            # 기본 파일 정보 생성
-            self.fi.Write()
+            # 소스/헤더 리스트 추가
+            for src in self.fi.SrcList:
+                self.lb_src.addItem(src)
+            for hdr in self.fi.HdrList:
+                self.lb_hdr.addItem(hdr)
 
-        # 소스/헤더 리스트를 한 번에 추가 - UI 배치 최적화
-        for src in self.fi.SrcList:
-            self.lb_src.addItem(src)
-        for hdr in self.fi.HdrList:
-            self.lb_hdr.addItem(hdr)
+            # 인클루드 코드 생성
+            self.make_include_code(True, self.lb_src, target_file_name)
+            self.make_include_code(False, self.lb_hdr, target_file_name)
 
-        # 인클루드 코드 생성 (최적화된 버전 사용)
-        self.make_include_code(True, self.lb_src, target_file_name)
-        self.make_include_code(False, self.lb_hdr, target_file_name)
+        finally:
+            # 원본 파일 정보 복원
+            self._restore_file_names(original_src, original_hdr)
 
     def make_include_code(self, is_src, lb, target_file_name=""):
         """인클루드 코드 생성"""

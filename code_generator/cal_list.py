@@ -3,6 +3,7 @@ from typing import Dict, List
 from core.info import Info, EMkFile, EMkMode, EArrType, EErrType, CellInfos, ArrInfos, SCellPos, SPrjtInfo
 import logging
 import traceback
+from code_generator.processing_manager import get_processing_pipeline
 
 # 성능 설정 안전 import
 try:
@@ -51,6 +52,9 @@ class CalList:
 
         # 데이터 캐싱을 위한 변수 추가
         self.cell_cache = {}
+
+        # 통합 처리 파이프라인 사용 (중복 제거)
+        self.pipeline = get_processing_pipeline()
 
         # 자주 사용하는 정규식 패턴 미리 컴파일 - 성능 최적화
         self.decimal_pattern = re.compile(r'(\d+\.\d*|\.\d+)(?![fF"\w])')
@@ -249,147 +253,122 @@ class CalList:
         return err_flag
 
     def ReadCalList(self, progress_callback=None):
-        """아이템리스트 read 후 임시 코드 생성 - 응답성 개선"""
-        import time
-        from PySide6.QtWidgets import QApplication
-
-        logging.info(f"시트 {self.ShtName} ReadCalList 시작")
-        start_time = time.time()
+        """아이템리스트 read 후 임시 코드 생성 - 통합 파이프라인 적용"""
         self.arrNameCnt = 0
 
-        try:
-            # 데이터 범위 검증
-            if not self.shtData or len(self.shtData) <= self.itemStartPos.Row:
-                logging.warning(f"시트 {self.ShtName}의 데이터가 비어있거나 충분하지 않습니다.")
-                return
+        # 데이터 범위 검증
+        if not self.shtData or len(self.shtData) <= self.itemStartPos.Row:
+            logging.warning(f"시트 {self.ShtName}의 데이터가 비어있거나 충분하지 않습니다.")
+            return
 
+        def process_sheet_data():
             total_rows = len(self.shtData) - self.itemStartPos.Row
-            processed_rows = 0
 
             # 배치 처리 크기 최적화 (데이터 크기에 따라 조정)
             if total_rows > 50000:
                 batch_size = 1000  # 대용량: 1000행씩
-            elif total_rows > 1000:  # 기준을 1000행으로 낮춤 (성능 최적화)
+            elif total_rows > 1000:
                 batch_size = 300   # 중간: 300행씩
             else:
                 batch_size = 100   # 소량: 100행씩
 
             logging.info(f"시트 {self.ShtName}: 배치 크기 {batch_size}로 {total_rows}행 처리 시작")
 
-            # 성능 최적화: 딕셔너리 순회를 한 번만 수행하고 리스트로 저장 (결과 동일, 속도 향상)
+            # 성능 최적화: 딕셔너리 순회를 한 번만 수행하고 리스트로 저장
             item_list = list(self.dItem.values())
 
-            # 배치 단위로 처리
-            for batch_start in range(self.itemStartPos.Row, len(self.shtData), batch_size):
-                batch_end = min(batch_start + batch_size, len(self.shtData))
+            # 행 인덱스 리스트 생성
+            row_indices = list(range(self.itemStartPos.Row, len(self.shtData)))
 
-                # 배치 시작 시 UI 응답성 및 진행률 업데이트
-                QApplication.processEvents()
+            # 배치 처리로 행들 처리
+            return self.pipeline.process_batch_with_progress(
+                row_indices,
+                lambda row: self._process_single_row(row, item_list),
+                f"시트 {self.ShtName} 데이터 처리",
+                progress_callback,
+                batch_size
+            )
 
-                if progress_callback:
-                    progress = int((processed_rows / total_rows) * 100)
-                    try:
-                        # 더 상세한 정보 제공
-                        elapsed = time.time() - start_time
-                        progress_callback(progress, f"시트 {self.ShtName}: {processed_rows}/{total_rows} 행 처리 중 ({elapsed:.1f}초 경과)")
-                    except InterruptedError as e:
-                        # 사용자가 취소한 경우
-                        logging.info(f"시트 {self.ShtName} 처리 중 사용자가 취소함: {str(e)}")
-                        raise  # 예외를 상위로 전파
+        # 통합 파이프라인으로 처리
+        results = self.pipeline.execute_with_monitoring(
+            process_sheet_data,
+            f"시트 {self.ShtName} ReadCalList",
+            progress_callback,
+            600,  # 10분 타임아웃
+            2048  # 2GB 메모리 제한
+        )
 
-                # 타임아웃 체크 (10분 제한)
-                elapsed_time = time.time() - start_time
-                if elapsed_time > 600:  # 10분
-                    logging.warning(f"시트 {self.ShtName} 처리 타임아웃: {elapsed_time:.1f}초 경과")
-                    raise TimeoutError(f"시트 {self.ShtName} 처리가 10분을 초과했습니다. {processed_rows}/{total_rows} 행 처리 완료")
+        # 코드 생성 단계
+        self._generate_temp_code(progress_callback)
 
-                # 배치 내 행들 처리 - Cython 최적화 활성화
-                # Cython 최적화 버전 사용 (안전한 동적 import)
-                fast_read_cal_list_processing = safe_import_cython_function('code_generator_v2', 'fast_read_cal_list_processing')
-                if fast_read_cal_list_processing:
-                    try:
-                        processed_rows_batch = fast_read_cal_list_processing(
-                            self.shtData, batch_start, batch_end, item_list
-                        )
-                        # ReadCalList Cython 최적화 사용 (로그 제거)
-                    except Exception:
-                        # Python 폴백
-                        processed_rows_batch = []
+        return results
+
+    def _process_single_row(self, row: int, item_list: list):
+        """단일 행 처리 - 메서드 분리"""
+        try:
+            # 아이템 행 설정
+            for item in item_list:
+                item.Row = row
+
+            self.chk_op_code()
+
+            if self.mkMode != EMkMode.NONE:
+                if self.mkMode == EMkMode.ARR_MEM:
+                    self.readArrMem(row)
                 else:
-                    # Python 폴백
-                    processed_rows_batch = []
+                    self.readRow(row)
 
-                # 개별 행 처리 (Cython 결과 또는 Python 폴백)
-                for row in range(batch_start, batch_end):
-                    try:
-                        # 아이템 행 설정 (성능 최적화: 사전 변환된 리스트 사용)
-                        for item in item_list:
-                            item.Row = row
+                self.chkCalList(row)
+                self.saveTempList(row)
 
-                        self.chk_op_code()
+            return f"행 {row} 처리 완료"
 
-                        if self.mkMode != EMkMode.NONE:
-                            if self.mkMode == EMkMode.ARR_MEM:
-                                self.readArrMem(row)
-                            else:
-                                self.readRow(row)
-
-                            self.chkCalList(row)
-                            self.saveTempList(row)
-
-                    except IndexError as e:
-                        logging.error(f"행 {row} 처리 중 인덱스 오류: {e}")
-                        logging.error(traceback.format_exc())
-                        # 다음 행 계속 처리
-
-                    processed_rows += 1
-
-                # 배치 완료 후 메모리 정리 (대용량 데이터 처리 시)
-                if batch_size >= 500 and processed_rows % (batch_size * 10) == 0:
-                    import gc
-                    gc.collect()
-                    logging.debug(f"시트 {self.ShtName}: {processed_rows}행 처리 완료, 메모리 정리 실행")
-
-            self.arrNameCnt = 0
-
-            # 코드 작성 단계에서의 오류 포착
-            total_items = sum(len(item) for item in self.dTempCode.values())
-            processed_items = 0
-
-            for key, item in self.dTempCode.items():
-                logging.debug(f"아이템 {key} 코드 생성 중, 항목 수: {len(item)}")
-
-                for i in range(len(item)):
-                    # 배치 단위로 UI 응답성 유지
-                    if processed_items % batch_size == 0:
-                        QApplication.processEvents()
-
-                        if progress_callback:
-                            progress = int((processed_items / total_items) * 100)
-                            try:
-                                # 더 상세한 정보 제공
-                                elapsed = time.time() - start_time
-                                progress_callback(progress, f"시트 {self.ShtName}: 코드 생성 중 {processed_items}/{total_items} ({elapsed:.1f}초 경과)")
-                            except InterruptedError as e:
-                                # 사용자가 취소한 경우
-                                logging.info(f"시트 {self.ShtName} 코드 생성 중 사용자가 취소함: {str(e)}")
-                                raise  # 예외를 상위로 전파
-
-                    try:
-                        self.writeCalList(item[i])
-                    except IndexError as e:
-                        logging.error(f"코드 작성 중 인덱스 오류: 키={key}, 인덱스={i}")
-                        logging.error(traceback.format_exc())
-                        # 다음 항목 계속 처리
-
-                    processed_items += 1
-
-        except Exception as e:
-            logging.error(f"ReadCalList 전체 오류: {e}")
+        except IndexError as e:
+            logging.error(f"행 {row} 처리 중 인덱스 오류: {e}")
             logging.error(traceback.format_exc())
-            raise
+            return f"행 {row} 처리 실패: {e}"
 
-        logging.info(f"시트 {self.ShtName} ReadCalList 완료 (소요시간: {time.time() - start_time:.1f}초)")
+    def _generate_temp_code(self, progress_callback=None):
+        """임시 코드 생성 - 메서드 분리"""
+        self.arrNameCnt = 0
+
+        # 코드 작성 단계
+        total_items = sum(len(item) for item in self.dTempCode.values())
+        if total_items == 0:
+            return
+
+        def process_temp_code():
+            code_items = []
+            for key, item in self.dTempCode.items():
+                for i in range(len(item)):
+                    code_items.append((key, i, item[i]))
+
+            return self.pipeline.process_batch_with_progress(
+                code_items,
+                lambda item_data: self._write_single_code_item(item_data),
+                f"시트 {self.ShtName} 코드 생성",
+                progress_callback,
+                100  # 100개씩 배치 처리
+            )
+
+        return self.pipeline.execute_with_monitoring(
+            process_temp_code,
+            f"시트 {self.ShtName} 임시 코드 생성",
+            progress_callback,
+            300,  # 5분 타임아웃
+            1024  # 1GB 메모리 제한
+        )
+
+    def _write_single_code_item(self, item_data):
+        """단일 코드 아이템 작성"""
+        key, index, item = item_data
+        try:
+            self.writeCalList(item)
+            return f"코드 아이템 {key}[{index}] 작성 완료"
+        except IndexError as e:
+            logging.error(f"코드 작성 중 인덱스 오류: 키={key}, 인덱스={index}")
+            logging.error(traceback.format_exc())
+            return f"코드 아이템 {key}[{index}] 작성 실패: {e}"
 
     def chk_op_code(self):
         """OpCode 오류 체크 - 성능 최적화"""

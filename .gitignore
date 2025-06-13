@@ -108,3 +108,17 @@ htmlcov/
 ~$*.docx
 ~$*.xlsx
 ~$*.pptxcleanup_backup/
+generated_code/00_EVTC387 전류제어 Base Cal 전제설/BswCfgPwm.c
+generated_code/00_EVTC387 전류제어 Base Cal 전제설/BswCfgPwm.h
+generated_code/00_EVTC387 전류제어 Base Cal 전제설/BswCfgRdc.c
+generated_code/00_EVTC387 전류제어 Base Cal 전제설/BswCfgRdc.h
+generated_code/00_EVTC387 전류제어 Base Cal 전제설/CcCalBase.c
+generated_code/00_EVTC387 전류제어 Base Cal 전제설/CcCalBase.h
+generated_code/01_EVTC387 프로젝트별 CcCal 사양/CcCalPrjCfg.c
+generated_code/01_EVTC387 프로젝트별 CcCal 사양/CcCalPrjCfg.h
+generated_code/04_EVTC387 출력 관련 Cal/CcPwrCal.c
+generated_code/04_EVTC387 출력 관련 Cal/CcPwrCal.h
+generated_code/06_EVTC387 프로젝트별 INV HW 사양 전변설/InvCfg.c
+generated_code/06_EVTC387 프로젝트별 INV HW 사양 전변설/InvCfg.h
+generated_code/07_EVTC387 INV HW 사양 Cal 전변설/SpInvCal.c
+generated_code/07_EVTC387 INV HW 사양 Cal 전변설/SpInvCal.h
