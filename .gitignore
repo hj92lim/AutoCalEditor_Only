@@ -105,4 +105,4 @@ htmlcov/
 # 문서 임시 파일들
 ~$*.docx
 ~$*.xlsx
-~$*.pptx
+~$*.pptxcleanup_backup/
