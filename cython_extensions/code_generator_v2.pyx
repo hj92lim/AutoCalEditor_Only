@@ -13,7 +13,7 @@ from libc.stdlib cimport malloc, free
 
 @boundscheck(False)
 @wraparound(False)
-def fast_read_cal_list_processing(object cal_list_obj, int start_row, int end_row, list item_list):
+def fast_read_cal_list_processing(cal_list_obj, int start_row, int end_row, list item_list):
     """
     ReadCalList의 핵심 반복문 최적화 - 완전한 데이터 처리 버전
     cal_list.py의 ReadCalList 메서드 최적화
