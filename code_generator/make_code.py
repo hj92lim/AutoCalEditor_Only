@@ -212,7 +212,7 @@ class MakeCode:
                 lambda i: self._process_single_sheet(i, progress_callback),
                 "DB 데이터 읽기",
                 progress_callback,
-                batch_size=5  # 5개 시트마다 리소스 체크
+                batch_size=50  # 🚀 극한 최적화: 50개 시트마다 리소스 체크 (10배 증가)
             )
 
         # 통합 파이프라인으로 전체 처리

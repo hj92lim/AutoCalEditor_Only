@@ -135,15 +135,12 @@ class ExceptionHandler:
         """완료 로그 통합 처리"""
         elapsed_time = time.time() - start_time
         
-        # 🚀 성능 최적화: 중요한 성능 정보만 로깅 (1초 이상 걸린 작업만)
-        if elapsed_time >= 1.0:  # 1초 이상 걸린 작업만 로깅
-            if memory_monitor and memory_monitor._memory_monitoring:
-                final_memory = memory_monitor.get_memory_usage()
-                memory_used = final_memory - initial_memory
-                logging.warning(f"⚠️ 성능 주의: {context} 완료 (소요시간: {elapsed_time:.1f}초, 메모리 사용량: {memory_used:.1f}MB)")
-            else:
-                logging.warning(f"⚠️ 성능 주의: {context} 완료 (소요시간: {elapsed_time:.1f}초)")
-        # 1초 미만 작업은 로깅하지 않음 (성능 향상)
+        # 🚀 성능 최적화: 완료 로깅 완전 제거 (조용한 실행)
+        # 성능 로깅을 완전히 제거하여 사용자가 원하는 조용한 실행 환경 제공
+        # 정말 심각한 문제(30초 이상)가 있을 때만 에러 로깅
+        if elapsed_time >= 30.0:  # 30초 이상은 정말 심각한 문제
+            logging.error(f"🚨 심각한 성능 문제: {context} (소요시간: {elapsed_time:.1f}초)")
+        # 30초 미만은 모두 정상으로 간주하여 조용히 실행
 
 
 class ProcessingPipeline:

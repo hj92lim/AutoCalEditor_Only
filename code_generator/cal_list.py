@@ -164,16 +164,9 @@ class CalList:
         # 캐시 미스 - 빠른 셀 읽기 사용
         value = self._fast_read_cell(row, col)
 
-        # 🚀 최적화: 더 효율적인 캐시 관리
-        cache_size = len(self.cell_cache)
-        if cache_size < 200000:  # 캐시 크기 증가 (20만개)
-            self.cell_cache[cache_key] = value
-        elif cache_size >= 250000:  # 25만개 초과 시 정리
-            # 🚀 최적화: 더 빠른 캐시 정리 (절반 제거)
-            keys_to_remove = list(self.cell_cache.keys())[::2]  # 홀수 인덱스만 제거
-            for key in keys_to_remove:
-                self.cell_cache.pop(key, None)  # pop 사용으로 더 안전
-            self.cell_cache[cache_key] = value
+        # 🚀 극한 최적화: 캐시 크기 제한 없이 사용 (메모리 트레이드오프)
+        # 대용량 처리 시 캐시 정리 오버헤드가 성능 병목이므로 제거
+        self.cell_cache[cache_key] = value
 
         return value
 
@@ -203,7 +196,6 @@ class CalList:
                                     cached_count += 1
 
                     if cached_count > 0:
-                        logging.debug(f"🚀 DB 배치 캐싱 완료: {cached_count}개 셀 캐시됨")
                         return
         except Exception as e:
             logging.debug(f"DB 배치 읽기 실패, 메모리 캐싱으로 폴백: {e}")
@@ -221,20 +213,15 @@ class CalList:
                     self.cell_cache[cache_key] = value
                     cached_count += 1
 
-        if cached_count > 0:
-            logging.debug(f"메모리 캐싱 완료: {cached_count}개 셀 캐시됨")
+        # 로깅 제거로 성능 향상
 
     def clear_cache_if_needed(self):
         """
-        🚀 성능 최적화: 필요시 캐시 정리
-        메모리 사용량이 너무 클 때만 정리
+        🚀 극한 최적화: 캐시 정리 완전 비활성화
+        대용량 처리 시 캐시 정리가 주요 병목이므로 비활성화
         """
-        if len(self.cell_cache) > 300000:  # 30만개 초과시
-            # 캐시의 2/3 제거
-            keys_to_remove = list(self.cell_cache.keys())[::3]  # 3개 중 1개만 유지
-            for key in keys_to_remove:
-                self.cell_cache.pop(key, None)
-            logging.debug(f"캐시 정리 완료: {len(keys_to_remove)}개 항목 제거")
+        # 성능 최적화를 위해 캐시 정리 비활성화
+        pass
 
     def ChkCalListPos(self):
         """아이템 항목 위치 찾기 - 캐싱 적용"""
@@ -354,7 +341,7 @@ class CalList:
                 0,
                 max_col
             )
-            logging.info(f"시트 {self.ShtName}: 벡터화 캐싱 완료 ({total_rows}행 × {max_col}열)")
+            # 로깅 제거로 성능 향상
 
             # 성능 최적화: 딕셔너리 순회를 한 번만 수행하고 리스트로 저장
             item_list = list(self.dItem.values())
@@ -362,13 +349,13 @@ class CalList:
             # 행 인덱스 리스트 생성
             row_indices = list(range(self.itemStartPos.Row, len(self.shtData)))
 
-            # 배치 처리로 행들 처리
+            # 🚀 극한 최적화: 배치 크기 대폭 증가 (10배)
             return self.pipeline.process_batch_with_progress(
                 row_indices,
                 lambda row: self._process_single_row(row, item_list),
                 f"시트 {self.ShtName} 데이터 처리",
                 progress_callback,
-                batch_size
+                batch_size * 10  # 배치 크기 10배 증가
             )
 
         # 통합 파이프라인으로 처리
@@ -430,7 +417,7 @@ class CalList:
                 lambda item_data: self._write_single_code_item(item_data),
                 f"시트 {self.ShtName} 코드 생성",
                 progress_callback,
-                1000  # 1000개씩 배치 처리 (10배 증가로 성능 향상)
+                10000  # 🚀 극한 최적화: 10,000개씩 배치 처리 (100배 증가)
             )
 
         return self.pipeline.execute_with_monitoring(
