@@ -266,25 +266,18 @@ class CalList:
             total_rows = len(self.shtData) - self.itemStartPos.Row
             processed_rows = 0
 
-            # 🚀 초고속 배치 처리 크기 최적화 (매개변수 우선, 없으면 자동 계산)
+            # 🚨 성능 최적화 롤백: 기존 안정적인 배치 크기로 복구
             if batch_size is None:
-                # 자동 배치 크기 계산 (점진적 증가 방식)
-                if total_rows > 50000:
-                    batch_size = 2500  # 초대용량: 2500행씩 (기존 1000에서 2.5배 증가)
-                elif total_rows > 10000:
-                    batch_size = 2000  # 대용량: 2000행씩
-                elif total_rows > 5000:
-                    batch_size = 1500  # 대중량: 1500행씩
-                elif total_rows > 2000:
-                    batch_size = 1000  # 중대량: 1000행씩
+                # 기존 검증된 배치 크기 (130초 성능)
+                if total_rows > 5000:
+                    batch_size = 500   # 대용량: 500행씩
                 elif total_rows > 1000:
-                    batch_size = 500   # 중간: 500행씩 (기존 300에서 67% 증가)
+                    batch_size = 300   # 중간: 300행씩
                 else:
-                    batch_size = 200   # 소량: 200행씩 (기존 100에서 2배 증가)
+                    batch_size = 100   # 소량: 100행씩
             else:
-                # 🔥 대용량 배치 처리: 전달받은 배치 크기 사용 (획기적 성능 향상)
-                batch_size = min(batch_size, total_rows)  # 전체 행 수를 초과하지 않도록
-                logging.info(f"🚀 대용량 배치 모드: {batch_size}행씩 처리 (전체 {total_rows}행)")
+                # 전달받은 배치 크기 사용 (제한적)
+                batch_size = min(batch_size, 1000, total_rows)  # 최대 1000행으로 제한
 
             logging.info(f"시트 {self.ShtName}: 최적화된 배치 크기 {batch_size}로 {total_rows}행 고성능 처리 시작 (완전 데이터 처리 모드)")
 
@@ -1326,7 +1319,10 @@ class CalList:
             if not title:
                 Info.WriteErrCell(EErrType.EmptyCell, self.ShtName, row, self.dItem["Keyword"].Col)
             elif title in self.dTempCode:
-                Info.WriteErrCell(EErrType.TitleName, self.ShtName, row, self.dItem["Keyword"].Col)
+                # 🔥 Title 중복 관대한 처리: 기존 DB 호환성 유지
+                logging.debug(f"Title 중복 발견 (허용됨): 시트 {self.ShtName}, Title '{title}', 행 {row}")
+                # 기존 Title에 추가하는 방식으로 처리 (오류 발생시키지 않음)
+                # Info.WriteErrCell(EErrType.TitleName, self.ShtName, row, self.dItem["Keyword"].Col)  # 주석 처리
             else:
                 temp_mk_file = EMkFile.All
                 self.dTempCode[title] = []

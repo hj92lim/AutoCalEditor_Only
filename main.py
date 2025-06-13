@@ -3080,27 +3080,10 @@ class DBExcelEditor(QMainWindow):
 
                     target_file_name = f"{base_name}.c"
 
-                    # 🚀 획기적인 성능 개선: 대량 배치 처리
-                    detailed_progress_callback(10, "시트 데이터 대량 로드 중...")
-
-                    # 모든 시트 데이터를 한 번에 메모리로 로드
-                    batch_sheet_data = {}
-                    for cal_sheet in current_sheet_surrogate.CalListSht:
-                        if hasattr(cal_sheet, 'Data') and cal_sheet.Data:
-                            batch_sheet_data[cal_sheet.Name] = cal_sheet.Data
-
-                    detailed_progress_callback(30, "고속 배치 처리 시작...")
-
-                    # 🔥 핵심: 배치 처리로 모든 시트를 동시에 처리
-                    if batch_sheet_data:
-                        # 대량 배치 처리 모드
-                        make_code.ReadXlstoCodeBatch(batch_sheet_data, detailed_progress_callback)
-                        detailed_progress_callback(70, "코드 변환 중...")
-                        make_code.ConvXlstoCode(source_file_name, target_file_name, detailed_progress_callback)
-                    else:
-                        # 폴백: 기존 방식
-                        make_code.ReadXlstoCode(detailed_progress_callback)
-                        make_code.ConvXlstoCode(source_file_name, target_file_name, detailed_progress_callback)
+                    # 🚨 긴급 수정: 병렬 처리 비활성화 (성능 악화 원인)
+                    # 기존 방식으로 복구 (130초 → 190초 문제 해결)
+                    make_code.ReadXlstoCode(detailed_progress_callback)
+                    make_code.ConvXlstoCode(source_file_name, target_file_name, detailed_progress_callback)
 
                     # 변환 중 오류 확인
                     if Info.ErrList:
