@@ -68,7 +68,8 @@ class GitManager:
             # where 명령어로 찾기 시도
             try:
                 result = subprocess.run(['where', 'git'],
-                                      capture_output=True, text=True, check=True)
+                                      capture_output=True, text=True, check=True,
+                                      encoding='utf-8', errors='replace')
                 git_path = result.stdout.strip().split('\n')[0]
                 if os.path.exists(git_path):
                     return git_path
@@ -86,7 +87,8 @@ class GitManager:
             # .git 디렉토리가 없으면 초기화
             if not (self.project_root / ".git").exists():
                 logging.info("Git 저장소 초기화 중...")
-                subprocess.run([self.git_executable, 'init'], cwd=self.project_root, check=True)
+                subprocess.run([self.git_executable, 'init'], cwd=self.project_root, check=True,
+                             encoding='utf-8', errors='replace')
                 logging.info("Git 저장소 초기화 완료")
 
             return True
@@ -104,7 +106,8 @@ class GitManager:
             # 원격 브랜치 목록 가져오기
             result = subprocess.run([self.git_executable, 'branch', '-r'],
                                   cwd=self.project_root,
-                                  capture_output=True, text=True, check=True)
+                                  capture_output=True, text=True, check=True,
+                                  encoding='utf-8', errors='replace')
 
             remote_branches = result.stdout.strip().split('\n')
 
@@ -142,7 +145,8 @@ class GitManager:
             try:
                 result = subprocess.run([self.git_executable, 'branch', '--show-current'],
                                       cwd=self.project_root,
-                                      capture_output=True, text=True, check=True)
+                                      capture_output=True, text=True, check=True,
+                                      encoding='utf-8', errors='replace')
                 branches['current'] = result.stdout.strip()
             except:
                 branches['current'] = 'main'
@@ -151,7 +155,8 @@ class GitManager:
             try:
                 result = subprocess.run([self.git_executable, 'branch'],
                                       cwd=self.project_root,
-                                      capture_output=True, text=True, check=True)
+                                      capture_output=True, text=True, check=True,
+                                      encoding='utf-8', errors='replace')
                 for line in result.stdout.strip().split('\n'):
                     branch = line.strip().replace('*', '').strip()
                     if branch and branch not in branches['local']:
@@ -163,7 +168,8 @@ class GitManager:
             try:
                 result = subprocess.run([self.git_executable, 'branch', '-r'],
                                       cwd=self.project_root,
-                                      capture_output=True, text=True, check=True)
+                                      capture_output=True, text=True, check=True,
+                                      encoding='utf-8', errors='replace')
                 for line in result.stdout.strip().split('\n'):
                     branch = line.strip()
                     if not branch:
@@ -209,14 +215,16 @@ class GitManager:
             # 로컬 브랜치가 있는지 확인
             result = subprocess.run([self.git_executable, 'branch'],
                                   cwd=self.project_root,
-                                  capture_output=True, text=True, check=True)
+                                  capture_output=True, text=True, check=True,
+                                  encoding='utf-8', errors='replace')
             local_branches = [line.strip().replace('*', '').strip()
                             for line in result.stdout.strip().split('\n')]
 
             if branch_name in local_branches:
                 # 로컬 브랜치로 전환
                 subprocess.run([self.git_executable, 'checkout', branch_name],
-                             cwd=self.project_root, check=True)
+                             cwd=self.project_root, check=True,
+                             encoding='utf-8', errors='replace')
             else:
                 # 원격 브랜치에서 새 로컬 브랜치 생성
                 # 먼저 origin에서 찾고, 없으면 다른 원격 저장소에서 찾기
@@ -225,7 +233,8 @@ class GitManager:
                 # 원격 브랜치 목록 확인
                 remote_result = subprocess.run([self.git_executable, 'branch', '-r'],
                                              cwd=self.project_root,
-                                             capture_output=True, text=True, check=True)
+                                             capture_output=True, text=True, check=True,
+                                             encoding='utf-8', errors='replace')
 
                 for line in remote_result.stdout.strip().split('\n'):
                     remote_branch = line.strip()
@@ -237,12 +246,14 @@ class GitManager:
 
                 if remote_ref:
                     subprocess.run([self.git_executable, 'checkout', '-b', branch_name, remote_ref],
-                                 cwd=self.project_root, check=True)
+                                 cwd=self.project_root, check=True,
+                                 encoding='utf-8', errors='replace')
                     logging.info(f"원격 브랜치 {remote_ref}에서 로컬 브랜치 {branch_name} 생성")
                 else:
                     # 원격에도 없으면 새 브랜치 생성
                     subprocess.run([self.git_executable, 'checkout', '-b', branch_name],
-                                 cwd=self.project_root, check=True)
+                                 cwd=self.project_root, check=True,
+                                 encoding='utf-8', errors='replace')
                     logging.info(f"새 브랜치 {branch_name} 생성")
 
             logging.info(f"브랜치 전환 완료: {branch_name}")
@@ -264,7 +275,8 @@ class GitManager:
             # 원격 저장소에서 최신 정보 가져오기
             try:
                 subprocess.run([self.git_executable, 'fetch'], cwd=self.project_root, check=True,
-                             capture_output=True, text=True)
+                             capture_output=True, text=True,
+                             encoding='utf-8', errors='replace')
                 logging.info("Git fetch 완료")
             except subprocess.CalledProcessError as e:
                 logging.error(f"Git fetch 실패: {e}")
@@ -362,8 +374,10 @@ class GitManager:
 
             # 단순한 Git 작업 - 보호 기능 없음
             try:
-                subprocess.run([self.git_executable, 'reset', '--hard'], cwd=self.project_root, check=True)
-                subprocess.run([self.git_executable, 'clean', '-fd'], cwd=self.project_root, check=True)
+                subprocess.run([self.git_executable, 'reset', '--hard'], cwd=self.project_root, check=True,
+                             encoding='utf-8', errors='replace')
+                subprocess.run([self.git_executable, 'clean', '-fd'], cwd=self.project_root, check=True,
+                             encoding='utf-8', errors='replace')
                 logging.info("Git reset & clean 완료")
             except subprocess.CalledProcessError as e:
                 logging.error(f"Git 명령 실패: {e}")
@@ -371,7 +385,8 @@ class GitManager:
 
             # 원격에서 최신 정보 가져오기
             try:
-                subprocess.run([self.git_executable, 'fetch', 'origin'], cwd=self.project_root, check=True)
+                subprocess.run([self.git_executable, 'fetch', 'origin'], cwd=self.project_root, check=True,
+                             encoding='utf-8', errors='replace')
                 logging.info("Git fetch 완료")
             except subprocess.CalledProcessError as e:
                 logging.error(f"Git fetch 실패: {e}")
@@ -570,12 +585,14 @@ class GitManager:
             logging.info(f"대상 브랜치: {target_branch}")
 
             # 모든 변경사항 스테이징
-            subprocess.run([self.git_executable, 'add', '.'], cwd=self.project_root, check=True)
+            subprocess.run([self.git_executable, 'add', '.'], cwd=self.project_root, check=True,
+                         encoding='utf-8', errors='replace')
 
             # 커밋 (변경사항이 없으면 스킵)
             try:
                 subprocess.run([self.git_executable, 'commit', '-m', commit_message],
-                             cwd=self.project_root, check=True)
+                             cwd=self.project_root, check=True,
+                             encoding='utf-8', errors='replace')
                 logging.info(f"커밋 완료: {commit_message}")
             except subprocess.CalledProcessError:
                 logging.info("커밋할 변경사항이 없음")
@@ -583,7 +600,8 @@ class GitManager:
 
             # 푸시 (현재 브랜치를 원격으로)
             subprocess.run([self.git_executable, 'push', 'origin', target_branch],
-                         cwd=self.project_root, check=True)
+                         cwd=self.project_root, check=True,
+                         encoding='utf-8', errors='replace')
 
             logging.info(f"Git push 완료: {target_branch}")
             return True
