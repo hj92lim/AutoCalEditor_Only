@@ -3267,7 +3267,7 @@ class DBExcelEditor(QMainWindow):
 
             # 최종 결과 처리
             if progress_dialog:
-                progress_callback(95, "결과 정리 중...")
+                optimized_progress_callback(95, "결과 정리 중...")
 
             if has_errors:
                 final_msg = f"코드 생성 완료 (일부 오류 발생): {len(d_xls)}개 그룹 중 일부에서 오류"
@@ -3278,7 +3278,7 @@ class DBExcelEditor(QMainWindow):
             logging.info(f"통합 코드 생성 완료: {final_msg}")
 
             if progress_dialog:
-                progress_callback(100, f"완료 - {len(generated_files_info)}개 파일 생성됨")
+                optimized_progress_callback(100, f"완료 - {len(generated_files_info)}개 파일 생성됨")
 
             # 결과창 표시 (옵션)
             if show_result:
