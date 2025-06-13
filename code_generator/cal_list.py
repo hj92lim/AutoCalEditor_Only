@@ -266,15 +266,21 @@ class CalList:
             total_rows = len(self.shtData) - self.itemStartPos.Row
             processed_rows = 0
 
-            # 배치 처리 크기 최적화 (데이터 크기에 따라 조정)
+            # 🚀 초고속 배치 처리 크기 최적화 (점진적 증가 방식)
             if total_rows > 50000:
-                batch_size = 1000  # 대용량: 1000행씩
-            elif total_rows > 1000:  # 기준을 1000행으로 낮춤 (성능 최적화)
-                batch_size = 300   # 중간: 300행씩
+                batch_size = 2500  # 초대용량: 2500행씩 (기존 1000에서 2.5배 증가)
+            elif total_rows > 10000:
+                batch_size = 2000  # 대용량: 2000행씩
+            elif total_rows > 5000:
+                batch_size = 1500  # 대중량: 1500행씩
+            elif total_rows > 2000:
+                batch_size = 1000  # 중대량: 1000행씩
+            elif total_rows > 1000:
+                batch_size = 500   # 중간: 500행씩 (기존 300에서 67% 증가)
             else:
-                batch_size = 100   # 소량: 100행씩
+                batch_size = 200   # 소량: 200행씩 (기존 100에서 2배 증가)
 
-            logging.info(f"시트 {self.ShtName}: 배치 크기 {batch_size}로 {total_rows}행 처리 시작")
+            logging.info(f"⚡ 시트 {self.ShtName}: 최적화된 배치 크기 {batch_size}로 {total_rows}행 초고속 처리 시작")
 
             # 성능 최적화: 딕셔너리 순회를 한 번만 수행하고 리스트로 저장 (결과 동일, 속도 향상)
             item_list = list(self.dItem.values())
@@ -287,11 +293,13 @@ class CalList:
                 QApplication.processEvents()
 
                 if progress_callback:
-                    progress = int((processed_rows / total_rows) * 100)
+                    # 🎯 개선된 진행률 계산 (시트 처리: 50-90%, 코드 생성: 90-100%)
+                    sheet_progress = int((processed_rows / total_rows) * 85)  # 85%까지만 (시트 처리)
+                    progress = 50 + sheet_progress  # 50%에서 시작해서 90%까지
                     try:
                         # 더 상세한 정보 제공
                         elapsed = time.time() - start_time
-                        progress_callback(progress, f"시트 {self.ShtName}: {processed_rows}/{total_rows} 행 처리 중 ({elapsed:.1f}초 경과)")
+                        progress_callback(progress, f"⚡ 시트 {self.ShtName}: {processed_rows}/{total_rows} 행 초고속 처리 중 ({elapsed:.1f}초)")
                     except InterruptedError as e:
                         # 사용자가 취소한 경우
                         logging.info(f"시트 {self.ShtName} 처리 중 사용자가 취소함: {str(e)}")
@@ -303,46 +311,59 @@ class CalList:
                     logging.warning(f"시트 {self.ShtName} 처리 타임아웃: {elapsed_time:.1f}초 경과")
                     raise TimeoutError(f"시트 {self.ShtName} 처리가 10분을 초과했습니다. {processed_rows}/{total_rows} 행 처리 완료")
 
-                # 배치 내 행들 처리 - Cython 최적화 활성화
-                # Cython 최적화 버전 사용 (안전한 동적 import)
+                # 🚀 초고속 Cython + 병렬 처리 활성화
                 fast_read_cal_list_processing = safe_import_cython_function('code_generator_v2', 'fast_read_cal_list_processing')
-                if fast_read_cal_list_processing:
+                use_cython = fast_read_cal_list_processing is not None
+
+                # 병렬 처리 여부 결정 (중간 크기 이상 배치에서만)
+                use_parallel_for_batch = (batch_end - batch_start) >= 500 and total_rows > 2000
+
+                if use_cython:
                     try:
-                        processed_rows_batch = fast_read_cal_list_processing(
+                        # 🔥 Cython 초고속 처리
+                        cython_result = fast_read_cal_list_processing(
                             self.shtData, batch_start, batch_end, item_list
                         )
-                        # ReadCalList Cython 최적화 사용 (로그 제거)
-                    except Exception:
-                        # Python 폴백
-                        processed_rows_batch = []
+                        if cython_result:
+                            processed_rows += (batch_end - batch_start)
+                            logging.debug(f"✅ Cython 처리 성공: {batch_start}-{batch_end}")
+                            continue  # 다음 배치로
+                        else:
+                            logging.debug(f"⚠️ Cython 결과 없음, Python 폴백")
+                    except Exception as e:
+                        logging.warning(f"⚠️ Cython 처리 실패, Python 폴백: {e}")
+
+                # Python 폴백 처리 (벡터화 + 선택적 병렬)
+                if use_parallel_for_batch:
+                    # 🔀 병렬 처리 (큰 배치)
+                    from concurrent.futures import ThreadPoolExecutor
+
+                    # 배치를 더 작은 청크로 분할
+                    chunk_size = max(50, (batch_end - batch_start) // 4)
+                    chunks = []
+                    for chunk_start in range(batch_start, batch_end, chunk_size):
+                        chunk_end = min(chunk_start + chunk_size, batch_end)
+                        chunks.append((chunk_start, chunk_end))
+
+                    with ThreadPoolExecutor(max_workers=min(4, len(chunks))) as executor:
+                        chunk_results = list(executor.map(
+                            lambda chunk: self.process_batch_vectorized(chunk[0], chunk[1], item_list),
+                            chunks
+                        ))
+
+                    # 결과 집계
+                    for result in chunk_results:
+                        if result['success']:
+                            processed_rows += result['processed']
+                        else:
+                            logging.error(f"청크 처리 실패: {result.get('error', 'Unknown')}")
                 else:
-                    # Python 폴백
-                    processed_rows_batch = []
-
-                # 개별 행 처리 (Cython 결과 또는 Python 폴백)
-                for row in range(batch_start, batch_end):
-                    try:
-                        # 아이템 행 설정 (성능 최적화: 사전 변환된 리스트 사용)
-                        for item in item_list:
-                            item.Row = row
-
-                        self.chk_op_code()
-
-                        if self.mkMode != EMkMode.NONE:
-                            if self.mkMode == EMkMode.ARR_MEM:
-                                self.readArrMem(row)
-                            else:
-                                self.readRow(row)
-
-                            self.chkCalList(row)
-                            self.saveTempList(row)
-
-                    except IndexError as e:
-                        logging.error(f"행 {row} 처리 중 인덱스 오류: {e}")
-                        logging.error(traceback.format_exc())
-                        # 다음 행 계속 처리
-
-                    processed_rows += 1
+                    # 🔥 벡터화된 순차 처리 (작은 배치)
+                    result = self.process_batch_vectorized(batch_start, batch_end, item_list)
+                    if result['success']:
+                        processed_rows += result['processed']
+                    else:
+                        logging.error(f"배치 처리 실패: {result.get('error', 'Unknown')}")
 
                 # 배치 완료 후 메모리 정리 (대용량 데이터 처리 시)
                 if batch_size >= 500 and processed_rows % (batch_size * 10) == 0:
@@ -365,11 +386,13 @@ class CalList:
                         QApplication.processEvents()
 
                         if progress_callback:
-                            progress = int((processed_items / total_items) * 100)
+                            # 🎯 코드 생성 진행률 (90-100% 범위)
+                            code_progress = int((processed_items / total_items) * 10)  # 10% 범위
+                            progress = 90 + code_progress  # 90%에서 시작해서 100%까지
                             try:
                                 # 더 상세한 정보 제공
                                 elapsed = time.time() - start_time
-                                progress_callback(progress, f"시트 {self.ShtName}: 코드 생성 중 {processed_items}/{total_items} ({elapsed:.1f}초 경과)")
+                                progress_callback(progress, f"🔥 시트 {self.ShtName}: 코드 생성 중 {processed_items}/{total_items} ({elapsed:.1f}초)")
                             except InterruptedError as e:
                                 # 사용자가 취소한 경우
                                 logging.info(f"시트 {self.ShtName} 코드 생성 중 사용자가 취소함: {str(e)}")
@@ -389,7 +412,77 @@ class CalList:
             logging.error(traceback.format_exc())
             raise
 
-        logging.info(f"시트 {self.ShtName} ReadCalList 완료 (소요시간: {time.time() - start_time:.1f}초)")
+        logging.info(f"🎉 시트 {self.ShtName} 초고속 ReadCalList 완료 (소요시간: {time.time() - start_time:.1f}초)")
+
+    def process_batch_vectorized(self, batch_start, batch_end, item_list):
+        """🚀 벡터화된 배치 처리 (Python 최적화 버전)"""
+        import traceback
+
+        batch_processed = 0
+
+        try:
+            # 벡터화된 셀 데이터 미리 읽기 (한 번에 여러 셀 접근)
+            batch_data = {}
+            required_cols = set()
+
+            # 필요한 컬럼들 미리 수집
+            for item in item_list:
+                required_cols.add(item.Col)
+
+            # 배치 범위의 모든 필요한 셀을 한 번에 읽기
+            for row in range(batch_start, batch_end):
+                for col in required_cols:
+                    if row < len(self.shtData) and col < len(self.shtData[row]):
+                        batch_data[(row, col)] = self.shtData[row][col] if self.shtData[row][col] else ""
+                    else:
+                        batch_data[(row, col)] = ""
+
+            # 🔥 고속 행별 처리 (벡터화된 데이터 사용)
+            for row in range(batch_start, batch_end):
+                try:
+                    # 아이템 행 설정 (최적화: 미리 읽은 데이터 사용)
+                    for item in item_list:
+                        item.Row = row
+                        # 캐시된 데이터 사용
+                        if hasattr(item, 'Str'):
+                            item.Str = batch_data.get((row, item.Col), "")
+
+                    self.chk_op_code()
+
+                    if self.mkMode != EMkMode.NONE:
+                        if self.mkMode == EMkMode.ARR_MEM:
+                            self.readArrMem(row)
+                        else:
+                            self.readRow(row)
+
+                        self.chkCalList(row)
+                        self.saveTempList(row)
+
+                    batch_processed += 1
+
+                except IndexError as e:
+                    logging.error(f"벡터화 처리 중 행 {row} 인덱스 오류: {e}")
+                    continue
+                except Exception as e:
+                    logging.error(f"벡터화 처리 중 행 {row} 오류: {e}")
+                    continue
+
+            return {
+                'success': True,
+                'processed': batch_processed,
+                'method': 'vectorized_python',
+                'range': (batch_start, batch_end)
+            }
+
+        except Exception as e:
+            logging.error(f"벡터화 배치 처리 실패 {batch_start}-{batch_end}: {e}")
+            logging.error(traceback.format_exc())
+            return {
+                'success': False,
+                'processed': batch_processed,
+                'error': str(e),
+                'range': (batch_start, batch_end)
+            }
 
     def chk_op_code(self):
         """OpCode 오류 체크 - 성능 최적화"""
