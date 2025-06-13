@@ -2836,7 +2836,7 @@ class DBExcelEditor(QMainWindow):
             dollar_sheets = [s for s in all_sheets if s.get('is_dollar_sheet', False)]
 
             progress.setValue(30)
-            progress.setLabelText(f"시트 분류 중... ({len(dollar_sheets)}개 $ 시트 발견)")
+            progress.setLabelText(f"⚡ 시트 분류 중... ({len(dollar_sheets)}개 $ 시트 발견)")
             QApplication.processEvents()
 
             # 2. 그룹별로 시트 분류 (C# CtrlXls.cs 88-114행 로직)
@@ -2965,10 +2965,10 @@ class DBExcelEditor(QMainWindow):
                     has_errors = True
                     continue
 
-                result_message += f"✅ FileInfo: {group_data['FileInfoSht'].Name}\n"
+                result_message += f"✅ FileInfo: {group_data['FileInfoSht']['name']}\n"
                 result_message += f"✅ CalList 시트 수: {len(group_data['CalListSht'])}\n"
                 for cal_sheet in group_data['CalListSht']:
-                    result_message += f"   - {cal_sheet.Name}\n"
+                    result_message += f"   - {cal_sheet['name']}\n"
 
                 # 글로벌 상태 초기화
                 Info.ErrList = []
@@ -2980,10 +2980,51 @@ class DBExcelEditor(QMainWindow):
                 lb_src = QListWidget()
                 lb_hdr = QListWidget()
 
+                # 🔥 긴급 수정: 시트 데이터 로드 추가
                 # 그룹의 모든 시트를 포함하는 서로게이트 객체 생성
                 current_sheet_surrogate = OriginalFileSurrogate(self.db)
-                current_sheet_surrogate.FileInfoSht = group_data['FileInfoSht']
-                current_sheet_surrogate.CalListSht = group_data['CalListSht']
+
+                # FileInfo 시트 데이터 로드
+                if group_data['FileInfoSht']:
+                    fileinfo_sheet = group_data['FileInfoSht']
+                    fileinfo_data = self.db.get_sheet_data(fileinfo_sheet['id'])
+                    if fileinfo_data:
+                        # 시트 정보 객체 생성 (실제 데이터 포함)
+                        fileinfo_obj = type('SheetInfo', (), {
+                            'Name': fileinfo_sheet['name'],
+                            'Data': fileinfo_data,
+                            'id': fileinfo_sheet['id']
+                        })()
+                        current_sheet_surrogate.FileInfoSht = fileinfo_obj
+                        logging.info(f"✅ FileInfo 시트 데이터 로드 완료: {fileinfo_sheet['name']} ({len(fileinfo_data)}행)")
+                    else:
+                        logging.error(f"❌ FileInfo 시트 데이터 로드 실패: {fileinfo_sheet['name']}")
+                        continue
+
+                # CalList 시트들 데이터 로드
+                callist_objects = []
+                for callist_sheet in group_data['CalListSht']:
+                    callist_data = self.db.get_sheet_data(callist_sheet['id'])
+                    if callist_data:
+                        # 시트 정보 객체 생성 (실제 데이터 포함)
+                        callist_obj = type('SheetInfo', (), {
+                            'Name': callist_sheet['name'],
+                            'Data': callist_data,
+                            'id': callist_sheet['id']
+                        })()
+                        callist_objects.append(callist_obj)
+                        logging.info(f"✅ CalList 시트 데이터 로드 완료: {callist_sheet['name']} ({len(callist_data)}행)")
+                    else:
+                        logging.error(f"❌ CalList 시트 데이터 로드 실패: {callist_sheet['name']}")
+
+                current_sheet_surrogate.CalListSht = callist_objects
+
+                # 데이터 로드 검증
+                if not current_sheet_surrogate.FileInfoSht or not current_sheet_surrogate.CalListSht:
+                    result_message += f"❌ 그룹 '{group_name}': 시트 데이터 로드 실패\n\n"
+                    logging.error(f"Sheet data loading failed for group '{group_name}'")
+                    has_errors = True
+                    continue
 
                 try:
                     # 출력 리스트 초기화 (그룹별로 독립적인 코드 생성)
@@ -3017,7 +3058,7 @@ class DBExcelEditor(QMainWindow):
 
                     # 타겟 파일명 결정 (그룹명 기반)
                     # FileInfo 시트에서 파일명 읽기 시도
-                    fileinfo_sht = group_data['FileInfoSht']
+                    fileinfo_sht = current_sheet_surrogate.FileInfoSht  # 🔥 수정: 로드된 데이터 사용
                     base_name = group_name  # 기본값은 그룹명
 
                     # FileInfo 시트에서 실제 파일명 읽기
