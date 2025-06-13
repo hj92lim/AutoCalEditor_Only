@@ -2741,6 +2741,9 @@ class DBExcelEditor(QMainWindow):
                     break
 
         try:
+            # 코드 생성 시작 시간 기록
+            generation_start_time = time.time()
+
             # 진행률 대화상자 생성 - 개선된 사용자 경험
             from PySide6.QtWidgets import QProgressDialog
             db_name = os.path.basename(selected_db.db_file)
@@ -2789,6 +2792,10 @@ class DBExcelEditor(QMainWindow):
             QApplication.processEvents()
 
             logging.info(f"Starting code generation for File ID: {self.current_file_id}. Output directory: {output_dir}")
+
+            # 🔥 최적화 상태 확인 및 로깅
+            self.log_optimization_status()
+
             self.statusBar.showMessage("코드 생성 준비 중...")
 
             # 3. V2 방식: 현재 DB 이름을 원본 파일명으로 사용
@@ -3131,11 +3138,19 @@ class DBExcelEditor(QMainWindow):
             progress.setLabelText(f"C코드 생성 완료! {len(generated_files_info)}개 파일 생성됨")
             QApplication.processEvents()
 
+            # 코드 생성 완료 시간 기록 및 표시
+            generation_end_time = time.time()
+            generation_duration = generation_end_time - generation_start_time
+
+            # 시간 정보 추가
+            time_info = f"\n\n⏱️ 코드 생성 소요시간: {generation_duration:.2f}초"
+            result_message += time_info
+            logging.info(f"코드 생성 완료 - 소요시간: {generation_duration:.2f}초")
+
             # 잠시 완료 메시지 표시
-            import time
             time.sleep(0.5)
 
-            self.statusBar.showMessage(final_msg)
+            self.statusBar.showMessage(f"{final_msg} (소요시간: {generation_duration:.2f}초)")
             progress.close()
 
             self.show_code_generation_result(result_message, output_dir, generated_files_info)
@@ -4566,6 +4581,46 @@ class DBExcelEditor(QMainWindow):
             self.statusBar.showMessage(f"다중 DB 코드 생성 완료: 모든 {len(successful_generations)}개 DB 성공")
 
         result_dialog.exec()
+
+    def log_optimization_status(self):
+        """최적화 상태 확인 및 로깅"""
+        try:
+            optimization_status = []
+
+            # Cython 모듈 확인
+            try:
+                import cython_extensions.code_generator_v2
+                optimization_status.append("✅ Cython code_generator_v2")
+            except ImportError:
+                optimization_status.append("❌ Cython code_generator_v2")
+
+            try:
+                import cython_extensions.data_processor
+                optimization_status.append("✅ Cython data_processor")
+            except ImportError:
+                optimization_status.append("❌ Cython data_processor")
+
+            try:
+                import cython_extensions.excel_processor_v2
+                optimization_status.append("✅ Cython excel_processor_v2")
+            except ImportError:
+                optimization_status.append("❌ Cython excel_processor_v2")
+
+            # 성능 설정 확인
+            try:
+                from core.performance_settings import USE_CYTHON_CAL_LIST, ENABLE_FLOAT_SUFFIX, CYTHON_CODE_GEN_AVAILABLE
+                optimization_status.append(f"✅ USE_CYTHON_CAL_LIST: {USE_CYTHON_CAL_LIST}")
+                optimization_status.append(f"✅ ENABLE_FLOAT_SUFFIX: {ENABLE_FLOAT_SUFFIX}")
+                optimization_status.append(f"✅ CYTHON_CODE_GEN_AVAILABLE: {CYTHON_CODE_GEN_AVAILABLE}")
+            except ImportError:
+                optimization_status.append("❌ performance_settings 모듈")
+
+            logging.info("🚀 최적화 상태 확인:")
+            for status in optimization_status:
+                logging.info(f"  {status}")
+
+        except Exception as e:
+            logging.warning(f"최적화 상태 확인 중 오류: {e}")
 
     def show_code_generation_result(self, result_message: str, output_dir: str, generated_files_info: List[Dict[str, str]]):
         """

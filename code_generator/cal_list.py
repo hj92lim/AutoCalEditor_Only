@@ -1385,7 +1385,10 @@ class CalList:
                     arr_value = Info.ReadCell(self.shtData, row, self.dItem["Value"].Col + 1 + i)
 
                     if not arr_value:
-                        Info.WriteErrCell(EErrType.EmptyCell, self.ShtName, row, self.dItem["Value"].Col + 1 + i)
+                        # 🔥 빈 셀 관대한 처리: 배열 값도 빈 값 허용 (경고만 로그)
+                        logging.debug(f"빈 배열 Value 셀 발견 (허용됨): 시트 {self.ShtName}, 행 {row}, 열 {self.dItem['Value'].Col + 1 + i}")
+                        arr_value = "0"  # 기본값 설정
+                        # Info.WriteErrCell(EErrType.EmptyCell, self.ShtName, row, self.dItem["Value"].Col + 1 + i)  # 주석 처리
                     else:
                         if i == 0:
                             self.dItem["Value"].Str = "{ "
@@ -1408,8 +1411,10 @@ class CalList:
                 Info.WriteErrCell(EErrType.EmptyCell, self.ShtName, row, self.dItem["Type"].Col)
             if not name_str:
                 Info.WriteErrCell(EErrType.EmptyCell, self.ShtName, row, self.dItem["Name"].Col)
+            # 🔥 빈 셀 관대한 처리: Value는 빈 값 허용 (경고만 로그)
             if not val_str:
-                Info.WriteErrCell(EErrType.EmptyCell, self.ShtName, row, self.dItem["Value"].Col)
+                logging.debug(f"빈 Value 셀 발견 (허용됨): 시트 {self.ShtName}, 행 {row}, 열 {self.dItem['Value'].Col}")
+                # Info.WriteErrCell(EErrType.EmptyCell, self.ShtName, row, self.dItem["Value"].Col)  # 주석 처리
             elif "[" in val_str or "]" in val_str:
                 Info.WriteErrCell(EErrType.OpCode, self.ShtName, row, self.dItem["OpCode"].Col)
 
