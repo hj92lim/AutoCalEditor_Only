@@ -56,31 +56,6 @@ class CalList:
         # 통합 처리 파이프라인 사용 (중복 제거)
         self.pipeline = get_processing_pipeline()
 
-    def _fast_read_cell(self, row: int, col: int) -> str:
-        """빠른 셀 읽기 - 안전한 인덱스 접근"""
-        try:
-            # 행 범위 체크
-            if row < 0 or row >= len(self.shtData):
-                return ""
-
-            # 열 범위 체크
-            if col < 0 or col >= len(self.shtData[row]):
-                return ""
-
-            # 셀 값 읽기
-            cell_value = self.shtData[row][col]
-
-            # None 값 처리
-            if cell_value is None:
-                return ""
-
-            # 문자열로 변환
-            return str(cell_value).strip()
-
-        except (IndexError, TypeError, AttributeError):
-            # 예외 발생 시 빈 문자열 반환
-            return ""
-
         # 자주 사용하는 정규식 패턴 미리 컴파일 - 성능 최적화
         self.decimal_pattern = re.compile(r'(\d+\.\d*|\.\d+)(?![fF"\w])')
         self.decimal_point_only_pattern = re.compile(r'(\d+\.)(?![fF"\w\d])')
@@ -148,6 +123,31 @@ class CalList:
 
         # Float Suffix 패턴 초기화 (04_Python_Migration 방식)
         self.float_suffix_patterns = True  # 간단한 플래그로 사용
+
+    def _fast_read_cell(self, row: int, col: int) -> str:
+        """빠른 셀 읽기 - 안전한 인덱스 접근"""
+        try:
+            # 행 범위 체크
+            if row < 0 or row >= len(self.shtData):
+                return ""
+
+            # 열 범위 체크
+            if col < 0 or col >= len(self.shtData[row]):
+                return ""
+
+            # 셀 값 읽기
+            cell_value = self.shtData[row][col]
+
+            # None 값 처리
+            if cell_value is None:
+                return ""
+
+            # 문자열로 변환
+            return str(cell_value).strip()
+
+        except (IndexError, TypeError, AttributeError):
+            # 예외 발생 시 빈 문자열 반환
+            return ""
 
     def cached_read_cell(self, row, col):
         """
