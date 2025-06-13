@@ -248,12 +248,12 @@ class CalList:
 
         return err_flag
 
-    def ReadCalList(self, progress_callback=None, batch_size=None):
-        """아이템리스트 read 후 임시 코드 생성 - 🚀 대용량 배치 처리 지원"""
+    def ReadCalList(self, progress_callback=None, batch_size=None, sheet_index=0, total_sheets=1):
+        """아이템리스트 read 후 임시 코드 생성 - 🚀 진행률 개선 버전"""
         import time
         from PySide6.QtWidgets import QApplication
 
-        logging.info(f"시트 {self.ShtName} ReadCalList 시작")
+        logging.info(f"시트 {self.ShtName} ReadCalList 시작 ({sheet_index+1}/{total_sheets})")
         start_time = time.time()
         self.arrNameCnt = 0
 
@@ -292,13 +292,19 @@ class CalList:
                 QApplication.processEvents()
 
                 if progress_callback:
-                    # 🎯 개선된 진행률 계산 (시트 처리: 50-90%, 코드 생성: 90-100%)
-                    sheet_progress = int((processed_rows / total_rows) * 85)  # 85%까지만 (시트 처리)
-                    progress = 50 + sheet_progress  # 50%에서 시작해서 90%까지
+                    # 🔥 수정된 진행률 계산: 전체 시트 진행률 고려
+                    # 시트별 기본 진행률 (50-85% 범위를 시트 수로 분할)
+                    sheet_base_progress = 50 + int((sheet_index / total_sheets) * 35)
+                    # 현재 시트 내 진행률 (각 시트당 할당된 범위 내에서)
+                    sheet_range = 35 / total_sheets  # 각 시트당 할당된 진행률 범위
+                    sheet_detail_progress = int((processed_rows / total_rows) * sheet_range)
+                    # 최종 진행률 (절대 뒤로 가지 않음)
+                    progress = min(85, sheet_base_progress + sheet_detail_progress)
+
                     try:
                         # 더 상세한 정보 제공
                         elapsed = time.time() - start_time
-                        progress_callback(progress, f"시트 {self.ShtName}: {processed_rows}/{total_rows} 행 고속 처리 중 ({elapsed:.1f}초)")
+                        progress_callback(progress, f"시트 {self.ShtName}: {processed_rows}/{total_rows} 행 고속 처리 중 ({sheet_index+1}/{total_sheets}) ({elapsed:.1f}초)")
                     except InterruptedError as e:
                         # 사용자가 취소한 경우
                         logging.info(f"시트 {self.ShtName} 처리 중 사용자가 취소함: {str(e)}")
@@ -385,13 +391,19 @@ class CalList:
                         QApplication.processEvents()
 
                         if progress_callback:
-                            # 🎯 코드 생성 진행률 (90-100% 범위)
-                            code_progress = int((processed_items / total_items) * 10)  # 10% 범위
-                            progress = 90 + code_progress  # 90%에서 시작해서 100%까지
+                            # 🔥 수정된 코드 생성 진행률: 시트별 고려
+                            # 시트별 기본 진행률 (85-95% 범위를 시트 수로 분할)
+                            code_base_progress = 85 + int((sheet_index / total_sheets) * 10)
+                            # 현재 시트 내 코드 생성 진행률
+                            code_range = 10 / total_sheets  # 각 시트당 할당된 코드 생성 범위
+                            code_detail_progress = int((processed_items / total_items) * code_range)
+                            # 최종 진행률 (절대 뒤로 가지 않음)
+                            progress = min(95, code_base_progress + code_detail_progress)
+
                             try:
                                 # 더 상세한 정보 제공
                                 elapsed = time.time() - start_time
-                                progress_callback(progress, f"시트 {self.ShtName}: C코드 생성 중 {processed_items}/{total_items} ({elapsed:.1f}초)")
+                                progress_callback(progress, f"시트 {self.ShtName}: C코드 생성 중 {processed_items}/{total_items} ({sheet_index+1}/{total_sheets}) ({elapsed:.1f}초)")
                             except InterruptedError as e:
                                 # 사용자가 취소한 경우
                                 logging.info(f"시트 {self.ShtName} 코드 생성 중 사용자가 취소함: {str(e)}")

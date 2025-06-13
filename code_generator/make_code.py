@@ -293,7 +293,8 @@ class MakeCode:
                     QApplication.processEvents()
 
                     try:
-                        self.cl[i].ReadCalList(progress_callback)
+                        # 🔥 시트 인덱스 정보 전달로 진행률 정확성 보장
+                        self.cl[i].ReadCalList(progress_callback, None, i, len(self.cl))
                     except InterruptedError as e:
                         # 사용자가 취소한 경우
                         logging.info(f"시트 {self.cl[i].ShtName} 처리 중 사용자가 취소함: {str(e)}")
