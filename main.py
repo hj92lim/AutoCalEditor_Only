@@ -2925,11 +2925,11 @@ class DBExcelEditor(QMainWindow):
 
                 # 타임아웃 체크
                 elapsed_time = time.time() - start_time
-                if elapsed_time > CodeGenerationConstants.MULTI_DB_TIMEOUT:
+                if elapsed_time > PerformanceConstants.MULTI_DB_TIMEOUT:
                     logging.warning(f"다중 DB 코드 생성 타임아웃: {elapsed_time:.1f}초 경과")
                     failed_generations.append({
                         'db_name': db_name,
-                        'error': f'전체 처리 시간 초과 ({CodeGenerationConstants.MULTI_DB_TIMEOUT}초 제한)',
+                        'error': f'전체 처리 시간 초과 ({PerformanceConstants.MULTI_DB_TIMEOUT}초 제한)',
                         'output_dir': 'N/A'
                     })
                     break
@@ -3174,9 +3174,9 @@ class DBExcelEditor(QMainWindow):
                     )
                     target_file_name = f"{base_name}{CodeGenerationConstants.C_SOURCE_EXT}"
 
-                    # 코드 읽기 및 변환
-                    make_code.ReadXlstoCode()
-                    make_code.ConvXlstoCode(db_name, target_file_name)
+                    # 코드 읽기 및 변환 (함수명 정확성 개선)
+                    make_code.ReadDBtoTempCode()
+                    make_code.ConvTempCodetoC(db_name, target_file_name)
 
                     # 변환 중 오류 확인
                     if Info.ErrList:

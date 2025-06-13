@@ -3,6 +3,7 @@ from typing import Dict, List
 from core.info import Info, EMkFile, EMkMode, EArrType, EErrType, CellInfos, ArrInfos, SCellPos, SPrjtInfo
 import logging
 import traceback
+from code_generator.processing_manager import get_processing_pipeline
 
 # 성능 설정 안전 import
 try:
@@ -51,6 +52,9 @@ class CalList:
 
         # 데이터 캐싱을 위한 변수 추가
         self.cell_cache = {}
+
+        # 통합 처리 파이프라인 사용 (중복 제거)
+        self.pipeline = get_processing_pipeline()
 
         # 자주 사용하는 정규식 패턴 미리 컴파일 - 성능 최적화
         self.decimal_pattern = re.compile(r'(\d+\.\d*|\.\d+)(?![fF"\w])')
@@ -271,304 +275,122 @@ class CalList:
         return err_flag
 
     def ReadCalList(self, progress_callback=None):
-        """아이템리스트 read 후 임시 코드 생성 - 대폭 성능 최적화"""
-        import time
-        from PySide6.QtWidgets import QApplication
-
-        logging.info(f"시트 {self.ShtName} ReadCalList 시작 (최적화 버전)")
-        start_time = time.time()
+        """아이템리스트 read 후 임시 코드 생성 - 통합 파이프라인 적용"""
         self.arrNameCnt = 0
 
-        try:
-            # 데이터 범위 검증
-            if not self.shtData or len(self.shtData) <= self.itemStartPos.Row:
-                logging.warning(f"시트 {self.ShtName}의 데이터가 비어있거나 충분하지 않습니다.")
-                return
+        # 데이터 범위 검증
+        if not self.shtData or len(self.shtData) <= self.itemStartPos.Row:
+            logging.warning(f"시트 {self.ShtName}의 데이터가 비어있거나 충분하지 않습니다.")
+            return
 
+        def process_sheet_data():
             total_rows = len(self.shtData) - self.itemStartPos.Row
-            processed_rows = 0
 
             # 🚀 성능 최적화 1: 배치 크기를 더 크게 설정
             if total_rows > 50000:
-                batch_size = 5000   # 대용량: 5000행씩 (5배 증가)
+                batch_size = 1000  # 대용량: 1000행씩
             elif total_rows > 1000:
-                batch_size = 1000   # 중간: 1000행씩 (3배 증가)
+                batch_size = 300   # 중간: 300행씩
             else:
                 batch_size = 500    # 소량: 500행씩 (5배 증가)
 
             logging.info(f"시트 {self.ShtName}: 최적화된 배치 크기 {batch_size}로 {total_rows}행 처리 시작")
 
-            # 🚀 성능 최적화 2: 아이템 컬럼 정보 미리 추출 (반복 계산 제거)
-            item_cols = {
-                'OpCode': self.dItem["OpCode"].Col,
-                'Keyword': self.dItem["Keyword"].Col,
-                'Type': self.dItem["Type"].Col,
-                'Name': self.nameDfltCol,  # 기본값으로 시작
-                'Value': self.valDfltCol,  # 기본값으로 시작
-                'Description': self.descDfltCol
-            }
+            # 성능 최적화: 딕셔너리 순회를 한 번만 수행하고 리스트로 저장
+            item_list = list(self.dItem.values())
 
-            # 🚀 성능 최적화 3: 배치 단위로 처리 (UI 업데이트 빈도 감소)
-            for batch_start in range(self.itemStartPos.Row, len(self.shtData), batch_size):
-                batch_end = min(batch_start + batch_size, len(self.shtData))
+            # 행 인덱스 리스트 생성
+            row_indices = list(range(self.itemStartPos.Row, len(self.shtData)))
 
-                # UI 응답성 유지 (배치마다 한 번만)
-                QApplication.processEvents()
+            # 배치 처리로 행들 처리
+            return self.pipeline.process_batch_with_progress(
+                row_indices,
+                lambda row: self._process_single_row(row, item_list),
+                f"시트 {self.ShtName} 데이터 처리",
+                progress_callback,
+                batch_size
+            )
 
-                if progress_callback:
-                    progress = int((processed_rows / total_rows) * 100)
-                    try:
-                        elapsed = time.time() - start_time
-                        progress_callback(progress, f"🚀 최적화 처리: {self.ShtName} ({processed_rows}/{total_rows}) - {elapsed:.1f}초")
-                    except InterruptedError as e:
-                        logging.info(f"시트 {self.ShtName} 처리 중 사용자가 취소함: {str(e)}")
-                        raise
+        # 통합 파이프라인으로 처리
+        results = self.pipeline.execute_with_monitoring(
+            process_sheet_data,
+            f"시트 {self.ShtName} ReadCalList",
+            progress_callback,
+            600,  # 10분 타임아웃
+            2048  # 2GB 메모리 제한
+        )
 
-                # 타임아웃 체크 (10분 제한)
-                elapsed_time = time.time() - start_time
-                if elapsed_time > 600:
-                    logging.warning(f"시트 {self.ShtName} 처리 타임아웃: {elapsed_time:.1f}초 경과")
-                    raise TimeoutError(f"시트 {self.ShtName} 처리가 10분을 초과했습니다. {processed_rows}/{total_rows} 행 처리 완료")
+        # 코드 생성 단계
+        self._generate_temp_code(progress_callback)
 
-                # 🚀 성능 최적화 4: 배치 단위 데이터 미리 로드
-                batch_data = self._preload_batch_data(batch_start, batch_end, item_cols)
+        return results
 
-                # 🚀 성능 최적화 5: 벡터화된 행 처리
-                for i, row in enumerate(range(batch_start, batch_end)):
-                    try:
-                        # 미리 로드된 데이터 사용
-                        row_data = batch_data[i]
-
-                        # OpCode 체크 (최적화된 버전)
-                        op_code_str = row_data['OpCode']
-                        if op_code_str in Info.dOpCode:
-                            self.mkMode = Info.dOpCode[op_code_str]
-                        else:
-                            self.mkMode = EMkMode.NONE
-                            if op_code_str:
-                                Info.WriteErrCell(EErrType.OpCode, self.ShtName, row, item_cols['OpCode'])
-
-                        # 모드별 처리 (최적화된 버전)
-                        if self.mkMode != EMkMode.NONE:
-                            if self.mkMode == EMkMode.ARR_MEM:
-                                self.readArrMem_optimized(row, row_data)
-                            else:
-                                self.readRow_optimized(row, row_data, item_cols)
-
-                            self.chkCalList(row)
-                            self.saveTempList(row)
-
-                    except IndexError as e:
-                        logging.error(f"행 {row} 처리 중 인덱스 오류: {e}")
-                        # 다음 행 계속 처리
-
-                    processed_rows += 1
-
-                # 메모리 정리 (더 적은 빈도로)
-                if processed_rows % (batch_size * 5) == 0:
-                    import gc
-                    gc.collect()
-                    logging.debug(f"시트 {self.ShtName}: {processed_rows}행 처리 완료, 메모리 정리 실행")
-
-            self.arrNameCnt = 0
-
-            # 코드 작성 단계에서의 오류 포착
-            total_items = sum(len(item) for item in self.dTempCode.values())
-            processed_items = 0
-
-            for key, item in self.dTempCode.items():
-                logging.debug(f"아이템 {key} 코드 생성 중, 항목 수: {len(item)}")
-
-                for i in range(len(item)):
-                    # 배치 단위로 UI 응답성 유지
-                    if processed_items % batch_size == 0:
-                        QApplication.processEvents()
-
-                        if progress_callback:
-                            progress = int((processed_items / total_items) * 100)
-                            try:
-                                # 더 상세한 정보 제공
-                                elapsed = time.time() - start_time
-                                progress_callback(progress, f"시트 {self.ShtName}: 코드 생성 중 {processed_items}/{total_items} ({elapsed:.1f}초 경과)")
-                            except InterruptedError as e:
-                                # 사용자가 취소한 경우
-                                logging.info(f"시트 {self.ShtName} 코드 생성 중 사용자가 취소함: {str(e)}")
-                                raise  # 예외를 상위로 전파
-
-                    try:
-                        self.writeCalList(item[i])
-                    except IndexError as e:
-                        logging.error(f"코드 작성 중 인덱스 오류: 키={key}, 인덱스={i}")
-                        logging.error(traceback.format_exc())
-                        # 다음 항목 계속 처리
-
-                    processed_items += 1
-
-        except Exception as e:
-            logging.error(f"ReadCalList 전체 오류: {e}")
-            logging.error(traceback.format_exc())
-            raise
-
-        logging.info(f"시트 {self.ShtName} ReadCalList 완료 (최적화 버전, 소요시간: {time.time() - start_time:.1f}초)")
-
-    def _preload_batch_data(self, batch_start: int, batch_end: int, item_cols: dict) -> list:
-        """
-        🚀 성능 최적화: 배치 단위로 필요한 데이터를 미리 로드
-        개별 셀 읽기 대신 한 번에 여러 셀을 읽어와서 성능 향상
-        """
-        batch_data = []
-
-        for row in range(batch_start, batch_end):
-            # 한 번에 필요한 모든 셀 데이터 읽기
-            row_data = {
-                'OpCode': self._fast_read_cell(row, item_cols['OpCode']),
-                'Keyword': self._fast_read_cell(row, item_cols['Keyword']),
-                'Type': self._fast_read_cell(row, item_cols['Type']),
-                'Name': self._fast_read_cell(row, item_cols['Name']),
-                'Value': self._fast_read_cell(row, item_cols['Value']),
-                'Description': self._fast_read_cell(row, item_cols['Description'])
-            }
-            batch_data.append(row_data)
-
-        return batch_data
-
-    def _fast_read_cell(self, row: int, col: int) -> str:
-        """
-        🚀 성능 최적화: Info.ReadCell보다 빠른 셀 읽기
-        타입 체크와 변환 오버헤드 최소화
-        """
+    def _process_single_row(self, row: int, item_list: list):
+        """단일 행 처리 - 메서드 분리"""
         try:
-            # 범위 체크 (한 번만)
-            if row < len(self.shtData) and col < len(self.shtData[row]):
-                cell_value = self.shtData[row][col]
+            # 아이템 행 설정
+            for item in item_list:
+                item.Row = row
 
-                # None 체크 (빠른 방법)
-                if cell_value is None:
-                    return ""
+            self.chk_op_code()
 
-                # 문자열이면 바로 반환 (가장 일반적인 케이스)
-                if isinstance(cell_value, str):
-                    return cell_value.strip()
+            if self.mkMode != EMkMode.NONE:
+                if self.mkMode == EMkMode.ARR_MEM:
+                    self.readArrMem(row)
+                else:
+                    self.readRow(row)
 
-                # 숫자면 문자열로 변환
-                return str(cell_value).strip()
+                self.chkCalList(row)
+                self.saveTempList(row)
 
-            return ""
-        except:
-            return ""
+            return f"행 {row} 처리 완료"
 
-    def readRow_optimized(self, row: int, row_data: dict, item_cols: dict):
-        """
-        🚀 성능 최적화: 미리 로드된 데이터를 사용하는 readRow
-        개별 셀 읽기 호출 제거로 성능 대폭 향상
-        """
-        # 열 위치 계산 (기존 로직 유지)
-        if self.mkMode == EMkMode.PRJT_DEF:
-            name_col = self.prjtDefCol
-            value_col = self.prjtNameCol
-        elif self.mkMode in [EMkMode.STR_MEM, EMkMode.ENUM_MEM]:
-            name_col = self.memDfltCol
-            value_col = self.valDfltCol
-        else:
-            name_col = self.nameDfltCol
-            value_col = self.valDfltCol
+        except IndexError as e:
+            logging.error(f"행 {row} 처리 중 인덱스 오류: {e}")
+            logging.error(traceback.format_exc())
+            return f"행 {row} 처리 실패: {e}"
 
-        # 미리 로드된 데이터 사용 (셀 읽기 호출 없음)
-        self.dItem["Keyword"].Str = row_data['Keyword']
-        self.dItem["Type"].Str = row_data['Type']
+    def _generate_temp_code(self, progress_callback=None):
+        """임시 코드 생성 - 메서드 분리"""
+        self.arrNameCnt = 0
 
-        # 동적 컬럼인 경우 다시 읽기 (필요한 경우만)
-        if name_col != item_cols['Name']:
-            self.dItem["Name"].Str = self._fast_read_cell(row, name_col)
-        else:
-            self.dItem["Name"].Str = row_data['Name']
-
-        if value_col != item_cols['Value']:
-            self.dItem["Value"].Str = self._fast_read_cell(row, value_col)
-        else:
-            self.dItem["Value"].Str = row_data['Value']
-
-        # 배열 처리 (기존 로직 유지)
-        if self.mkMode == EMkMode.ARRAY:
-            self.currentArr = f"{self.ShtName}_{self.dItem['Name'].Str}_{self.arrNameCnt}"
-            self.arrNameCnt += 1
-            arr_type = self.chkArrInfo(row)
-
-            if arr_type == EArrType.SizeErr:
-                Info.WriteErrCell(EErrType.ArrSizeErr, self.ShtName, row, name_col)
-            elif arr_type == EArrType.Type2:
-                desc_col = self.descDfltCol + self.dArr[self.currentArr].OrignalSize.Col
-                self.dItem["Description"].Str = self._fast_read_cell(row, desc_col)
-                self.dItem["Value"].Str = ""
-                return
-
-        elif self.mkMode == EMkMode.PRJT_DEF:
-            prjt_def = self.dItem["Name"].Str
-            prjt_name = self.dItem["Value"].Str
-
-            if not prjt_def and not prjt_name:
-                # 다른 열 검사
-                prjt_def = self._fast_read_cell(row, self.prjtDefCol + 1)
-                prjt_name = self._fast_read_cell(row, self.prjtNameCol + 1)
-
-            self.dItem["Name"].Str = prjt_def
-            self.dItem["Value"].Str = prjt_name
-            desc_col = value_col + 2
-            self.dItem["Description"].Str = self._fast_read_cell(row, desc_col)
+        # 코드 작성 단계
+        total_items = sum(len(item) for item in self.dTempCode.values())
+        if total_items == 0:
             return
 
-        # 설명 읽기
-        self.dItem["Description"].Str = row_data['Description']
+        def process_temp_code():
+            code_items = []
+            for key, item in self.dTempCode.items():
+                for i in range(len(item)):
+                    code_items.append((key, i, item[i]))
 
-    def readArrMem_optimized(self, row: int, row_data: dict):
-        """
-        🚀 성능 최적화: 배열 멤버 읽기 최적화
-        기존 readArrMem 함수의 성능 개선 버전
-        """
-        # 기존 검증 로직 유지
-        if self.currentArr not in self.dArr:
-            logging.error(f"currentArr '{self.currentArr}'가 dArr 딕셔너리에 없습니다.")
-            return
+            return self.pipeline.process_batch_with_progress(
+                code_items,
+                lambda item_data: self._write_single_code_item(item_data),
+                f"시트 {self.ShtName} 코드 생성",
+                progress_callback,
+                100  # 100개씩 배치 처리
+            )
 
-        if self.dArr[self.currentArr].ArrType == EArrType.SizeErr.value:
-            return
-        if self.dArr[self.currentArr].ArrType == EArrType.Type3.value and row != self.dArr[self.currentArr].StartPos.Row:
-            return
+        return self.pipeline.execute_with_monitoring(
+            process_temp_code,
+            f"시트 {self.ShtName} 임시 코드 생성",
+            progress_callback,
+            300,  # 5분 타임아웃
+            1024  # 1GB 메모리 제한
+        )
 
-        # 🚀 성능 최적화: 행 단위로 한 번에 데이터 읽기
-        start_col = self.dArr[self.currentArr].StartPos.Col
-        end_col = self.dArr[self.currentArr].EndPos.Col
-
-        # 한 번에 행 데이터 읽기
-        temp_line = []
-        for col in range(start_col, end_col + 1):
-            cell_str = self._fast_read_cell(row, col)
-
-            # 기존 처리 로직 유지 (간소화)
-            if cell_str == Info.ReadingXlsRule:
-                if row == self.dArr[self.currentArr].StartPos.Row:
-                    col_idx = col - start_col
-                    if col_idx not in self.dArr[self.currentArr].AnnotateCol:
-                        self.dArr[self.currentArr].AnnotateCol.append(col_idx)
-                        self.dArr[self.currentArr].EndPos.Col += 1
-                        self.dArr[self.currentArr].ReadSize.Col += 1
-
-            cell_str = cell_str.replace(Info.ReadingXlsRule, "")
-            temp_line.append(cell_str)
-
-            # Alignment 크기 계산
-            temp_col_pos = col - start_col
-            if self.dArr[self.currentArr].ArrType == EArrType.Type3.value:
-                temp_col_pos %= 10
-
-            while temp_col_pos >= len(self.dArr[self.currentArr].AlignmentSize):
-                self.dArr[self.currentArr].AlignmentSize.append(0)
-
-            cell_length = len(cell_str.encode('utf-8'))
-            if cell_length > self.dArr[self.currentArr].AlignmentSize[temp_col_pos]:
-                self.dArr[self.currentArr].AlignmentSize[temp_col_pos] = cell_length
-
-        self.dArr[self.currentArr].TempArr.append(temp_line)
+    def _write_single_code_item(self, item_data):
+        """단일 코드 아이템 작성"""
+        key, index, item = item_data
+        try:
+            self.writeCalList(item)
+            return f"코드 아이템 {key}[{index}] 작성 완료"
+        except IndexError as e:
+            logging.error(f"코드 작성 중 인덱스 오류: 키={key}, 인덱스={index}")
+            logging.error(traceback.format_exc())
+            return f"코드 아이템 {key}[{index}] 작성 실패: {e}"
 
     def chk_op_code(self):
         """OpCode 오류 체크 - 성능 최적화"""
