@@ -35,6 +35,8 @@ cython_extensions/*.c
 # SQLite WAL 및 SHM 파일들 (임시 파일)
 *.db-wal
 *.db-shm
+database/
+generated_output/
 
 # ===== 로그 파일들 =====
 logs/
