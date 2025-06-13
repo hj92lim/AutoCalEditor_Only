@@ -98,6 +98,187 @@ log_file_path = setup_logging()
 
 # 기본 import
 import subprocess
+
+# 코드 생성 관련 상수 (SSOT 원칙)
+class CodeGenerationConstants:
+    """코드 생성 관련 상수 정의"""
+
+    # 시트 타입 정의
+    FILEINFO_SHEET_TYPE = "FileInfo"
+    CALLIST_SHEET_TYPES = ["CalList", "CalData", "Caldata", "COMMON"]
+    PROJECT_SHEET_PREFIX = "_"
+    UNDEFINED_SHEET_TYPE = "UNDEFINED"
+    END_SHEET_TYPE = "END"
+
+    # 그룹 관련
+    DEFAULT_GROUP_NAME = "Default"
+
+    # 파일 확장자
+    C_SOURCE_EXT = ".c"
+    C_HEADER_EXT = ".h"
+
+    # FileInfo 시트에서 파일명 읽기 위치
+    FILEINFO_FILENAME_ROW_PRIMARY = 9
+    FILEINFO_FILENAME_COL_PRIMARY = 3
+    FILEINFO_FILENAME_ROW_SECONDARY = 8
+    FILEINFO_FILENAME_COL_SECONDARY = 2
+
+    # 타임아웃 설정 (초)
+    MULTI_DB_TIMEOUT = 3600  # 1시간
+    GIT_COMMAND_TIMEOUT = 10  # Git 명령어 타임아웃
+
+    # 진행률 범위
+    PROGRESS_SHEET_CLASSIFICATION_START = 30
+    PROGRESS_SHEET_CLASSIFICATION_END = 50
+    PROGRESS_CODE_GENERATION_START = 50
+    PROGRESS_CODE_GENERATION_END = 95
+
+    # UI 업데이트 간격 (밀리초)
+    GIT_STATUS_UPDATE_INTERVAL = 3000  # 3초마다 Git 상태 업데이트
+
+class CodeGenerationHelper:
+    """코드 생성 관련 공통 로직을 담당하는 헬퍼 클래스"""
+
+    @staticmethod
+    def classify_sheets_by_group(db_handler: 'DBHandlerV2') -> Dict[str, Dict[str, Any]]:
+        """
+        시트들을 그룹별로 분류하는 공통 로직
+
+        Returns:
+            Dict[str, Dict[str, Any]]: 그룹명 -> {FileInfoSht, CalListSht[]} 매핑
+        """
+        sheets = db_handler.get_sheets()
+        dollar_sheets = [s for s in sheets if s.get('is_dollar_sheet', False)]
+
+        if not dollar_sheets:
+            return {}
+
+        d_xls = {}
+        logging.info(f"시트 그룹별 분류 시작: {len(dollar_sheets)}개 $ 시트")
+
+        for sheet_info in dollar_sheets:
+            sheet_name = sheet_info['name']
+            logging.info(f"시트 분류 중: '{sheet_name}'")
+
+            # 패턴 1: $(GroupName)SheetType
+            if sheet_name.startswith("$(") and ")" in sheet_name:
+                temp_name = sheet_name[1:]  # $ 제거
+                temp_sht_name = temp_name.split(')')
+                group_name = temp_sht_name[0].replace("(", "")
+                sheet_type = temp_sht_name[1] if len(temp_sht_name) > 1 else ""
+
+                logging.info(f"  → 그룹 패턴 - 그룹: '{group_name}', 타입: '{sheet_type}'")
+
+                if group_name not in d_xls:
+                    d_xls[group_name] = {"FileInfoSht": None, "CalListSht": []}
+
+                CodeGenerationHelper._assign_sheet_to_group(
+                    d_xls[group_name], sheet_info, sheet_type, group_name, db_handler
+                )
+
+            # 패턴 2: $SheetType (그룹명 없음)
+            elif sheet_name.startswith("$") and not sheet_name.startswith("$("):
+                sheet_type = sheet_name[1:].strip()  # $ 제거 및 공백 제거
+                group_name = CodeGenerationConstants.DEFAULT_GROUP_NAME
+
+                logging.info(f"  → 단순 패턴 - 그룹: '{group_name}', 타입: '{sheet_type}'")
+
+                if group_name not in d_xls:
+                    d_xls[group_name] = {"FileInfoSht": None, "CalListSht": []}
+
+                CodeGenerationHelper._assign_sheet_to_group(
+                    d_xls[group_name], sheet_info, sheet_type, group_name, db_handler
+                )
+            else:
+                logging.warning(f"  → 인식되지 않는 시트 패턴: '{sheet_name}'")
+
+        # 그룹별 분류 결과 로깅
+        logging.info(f"그룹별 분류 결과: {len(d_xls)}개 그룹")
+        for group_name, group_data in d_xls.items():
+            fileinfo_count = 1 if group_data["FileInfoSht"] else 0
+            callist_count = len(group_data["CalListSht"])
+            logging.info(f"  그룹 '{group_name}': FileInfo {fileinfo_count}개, CalList {callist_count}개")
+
+        return d_xls
+
+    @staticmethod
+    def _assign_sheet_to_group(group_data: Dict[str, Any], sheet_info: Dict[str, Any],
+                              sheet_type: str, group_name: str, db_handler: 'DBHandlerV2'):
+        """시트를 그룹에 할당하는 내부 메서드"""
+        if sheet_type == CodeGenerationConstants.FILEINFO_SHEET_TYPE:
+            # FileInfo 시트 데이터 로드
+            fileinfo_sheet_data = db_handler.get_sheet_data(sheet_info['id'])
+            fileinfo_sht_info = DataParser.prepare_sheet_for_existing_code(
+                sheet_info['name'], fileinfo_sheet_data
+            )
+            group_data['FileInfoSht'] = fileinfo_sht_info
+            logging.info(f"  → FileInfo 시트 등록: 그룹 '{group_name}'")
+        elif (sheet_type in CodeGenerationConstants.CALLIST_SHEET_TYPES or
+              sheet_type.startswith(CodeGenerationConstants.PROJECT_SHEET_PREFIX) or
+              CodeGenerationConstants.UNDEFINED_SHEET_TYPE in sheet_type or
+              sheet_type == CodeGenerationConstants.END_SHEET_TYPE):
+            # CalList 시트 데이터 로드
+            callist_sheet_data = db_handler.get_sheet_data(sheet_info['id'])
+            callist_sht_info = DataParser.prepare_sheet_for_existing_code(
+                sheet_info['name'], callist_sheet_data
+            )
+            group_data['CalListSht'].append(callist_sht_info)
+            logging.info(f"  → CalList 시트 등록: 그룹 '{group_name}' 타입 '{sheet_type}'")
+        else:
+            # 알 수 없는 타입도 CalList로 처리 (C# 레거시 호환성)
+            callist_sheet_data = db_handler.get_sheet_data(sheet_info['id'])
+            callist_sht_info = DataParser.prepare_sheet_for_existing_code(
+                sheet_info['name'], callist_sheet_data
+            )
+            group_data['CalListSht'].append(callist_sht_info)
+            logging.info(f"  → 알 수 없는 타입을 CalList로 등록: 그룹 '{group_name}' 타입 '{sheet_type}'")
+
+    @staticmethod
+    def get_base_filename_from_fileinfo(fileinfo_sht: SShtInfo, group_name: str) -> str:
+        """FileInfo 시트에서 기본 파일명을 추출"""
+        base_name = group_name  # 기본값은 그룹명
+
+        if fileinfo_sht and fileinfo_sht.Data:
+            # 우선 순위: 9행 3열 → 8행 2열
+            s_file = Info.ReadCell(
+                fileinfo_sht.Data,
+                CodeGenerationConstants.FILEINFO_FILENAME_ROW_PRIMARY,
+                CodeGenerationConstants.FILEINFO_FILENAME_COL_PRIMARY
+            )
+            if s_file and s_file.endswith(CodeGenerationConstants.C_SOURCE_EXT):
+                base_name = s_file[:-2]  # .c 확장자 제거
+                logging.info(f"그룹 '{group_name}' 파일명 읽기 (9행 3열): {s_file} → {base_name}")
+            else:
+                # 대체 위치 시도
+                s_file_alt = Info.ReadCell(
+                    fileinfo_sht.Data,
+                    CodeGenerationConstants.FILEINFO_FILENAME_ROW_SECONDARY,
+                    CodeGenerationConstants.FILEINFO_FILENAME_COL_SECONDARY
+                )
+                if s_file_alt and s_file_alt.endswith(CodeGenerationConstants.C_SOURCE_EXT):
+                    base_name = s_file_alt[:-2]
+                    logging.info(f"그룹 '{group_name}' 파일명 읽기 (8행 2열 대체): {s_file_alt} → {base_name}")
+                else:
+                    logging.info(f"그룹 '{group_name}' 기본 파일명 사용: {base_name}")
+        else:
+            logging.info(f"그룹 '{group_name}' FileInfo 없음, 기본 파일명 사용: {base_name}")
+
+        return base_name
+
+    @staticmethod
+    def initialize_global_state():
+        """전역 상태 초기화"""
+        if hasattr(Info, 'ErrList'):
+            Info.ErrList = []
+        if hasattr(Info, 'FileList'):
+            Info.FileList = []
+        if hasattr(Info, 'PrjtList'):
+            Info.PrjtList = []
+        if hasattr(Info, 'MkFileNum'):
+            Info.MkFileNum = 0
+        if hasattr(Info, 'ErrNameSize'):
+            Info.ErrNameSize = 0
+
 class OriginalFileSurrogate:
     """기존 코드(MakeCode 등)와의 호환성을 위한 원본 파일 데이터 대체 클래스"""
 
@@ -214,10 +395,10 @@ class DBExcelEditor(QMainWindow):
                                "Git 설정이 필요합니다. 프로그램을 다시 시작해주세요.")
             sys.exit(1)
 
-        # Git 상태 자동 업데이트 타이머 (3초마다)
+        # Git 상태 자동 업데이트 타이머
         self.git_status_timer = QTimer()
         self.git_status_timer.timeout.connect(self.update_git_status_display)
-        self.git_status_timer.start(3000)  # 3초마다 업데이트
+        self.git_status_timer.start(CodeGenerationConstants.GIT_STATUS_UPDATE_INTERVAL)
 
         # 애플리케이션 종료 시 DB 연결 해제 보장
         QApplication.instance().aboutToQuit.connect(self.cleanup)
@@ -2581,13 +2762,13 @@ class DBExcelEditor(QMainWindow):
             self.last_directory = output_dir
             self.settings.setValue(Info.LAST_DIRECTORY_KEY, output_dir)
 
-            # 3. 코드 생성 실행
+            # 3. 코드 생성 실행 (통합 함수 사용)
             if len(selected_dbs) == 1:
                 # 단일 DB 처리
-                self.generate_code_for_single_db(selected_dbs[0], output_dir)
+                self.generate_code_for_single_db_unified(selected_dbs[0], output_dir)
             else:
                 # 다중 DB 처리 (개선된 배치 처리)
-                self.generate_code_for_multiple_dbs_improved(selected_dbs, output_dir)
+                self.generate_code_for_multiple_dbs_unified(selected_dbs, output_dir)
 
         except Exception as e:
             error_msg = f"코드 생성 중 오류 발생: {str(e)}"
@@ -2612,8 +2793,8 @@ class DBExcelEditor(QMainWindow):
             # 다중 DB면 사용자 선택 (체크박스 방식)
             return self.show_multiple_database_selection_dialog()
 
-    def generate_code_for_single_db(self, selected_db: 'DBHandlerV2', output_dir: str):
-        """단일 DB에 대한 코드 생성 - 응답성 개선"""
+    def generate_code_for_single_db_unified(self, selected_db: 'DBHandlerV2', output_dir: str):
+        """단일 DB에 대한 코드 생성 - 통합 함수 사용"""
         # 선택된 DB로 전환
         if self.db_manager.get_current_db() != selected_db:
             # 선택된 DB의 이름 찾기
@@ -2624,14 +2805,14 @@ class DBExcelEditor(QMainWindow):
                     break
 
         try:
-            # 진행률 대화상자 생성 - 개선된 사용자 경험
+            # 진행률 대화상자 생성
             from PySide6.QtWidgets import QProgressDialog
             db_name = os.path.basename(selected_db.db_file)
             progress = QProgressDialog(f"코드 생성 중: {db_name}", "취소", 0, 100, self)
             progress.setWindowModality(Qt.WindowModal)
-            progress.setMinimumDuration(0)  # 즉시 표시
-            progress.setAutoClose(False)  # 자동 닫기 방지
-            progress.setAutoReset(False)  # 자동 리셋 방지
+            progress.setMinimumDuration(0)
+            progress.setAutoClose(False)
+            progress.setAutoReset(False)
             progress.show()
             progress.setValue(0)
 
@@ -2639,7 +2820,7 @@ class DBExcelEditor(QMainWindow):
             progress.setLabelText("코드 생성 준비 중...")
             QApplication.processEvents()
 
-            # 1. 현재 편집 중인 시트 저장 (선택사항이지만 권장)
+            # 1. 현재 편집 중인 시트 저장 확인
             if self.current_sheet_id is not None:
                 progress.setValue(5)
                 progress.setLabelText("변경 사항 저장 확인 중...")
@@ -2653,9 +2834,9 @@ class DBExcelEditor(QMainWindow):
                     self.save_current_sheet()
                 elif reply == QMessageBox.Cancel:
                     progress.close()
-                    return # 생성 취소
+                    return
 
-            # 2. 코드 저장 위치 (이미 전달받은 경우 건너뛰기)
+            # 2. 출력 디렉토리 설정
             if not output_dir:
                 progress.setValue(10)
                 progress.setLabelText("출력 디렉토리 선택 중...")
@@ -2664,351 +2845,31 @@ class DBExcelEditor(QMainWindow):
                 output_dir = QFileDialog.getExistingDirectory(self, "코드 저장 폴더 선택", "")
                 if not output_dir:
                     progress.close()
-                    return # 사용자가 취소
+                    return
 
-            progress.setValue(15)
-            progress.setLabelText("코드 생성 준비 중...")
-            QApplication.processEvents()
-
-            logging.info(f"Starting code generation for File ID: {self.current_file_id}. Output directory: {output_dir}")
-            self.statusBar.showMessage("코드 생성 준비 중...")
-
-            # 3. V2 방식: 현재 DB 이름을 원본 파일명으로 사용
-            source_file_name = self.db_manager.current_db_name or "Unknown Source"
-
-            # 단일 DB도 다중 DB처럼 DB명 폴더 생성 (다중 DB와 동일한 구조)
+            # DB명 폴더 생성 (다중 DB와 동일한 구조)
             db_output_dir = os.path.join(output_dir, os.path.splitext(db_name)[0])
             os.makedirs(db_output_dir, exist_ok=True)
             logging.info(f"단일 DB 출력 디렉토리 생성: {db_output_dir}")
 
-            # 실제 출력 디렉토리를 DB 폴더로 변경
-            output_dir = db_output_dir
+            # 통합 코드 생성 함수 호출
+            result_message, generated_files_info = self.generate_code_unified(
+                selected_db, db_output_dir, progress, show_result=True, return_file_info=True
+            )
 
-            progress.setValue(20)
-            progress.setLabelText("코드 생성 시작...")
-            QApplication.processEvents()
-
-            # 4. V2 방식: 직접 시트 데이터 로드 (파일 개념 없음)
-            # 원본 코드 호환을 위한 더미 파일 ID 사용
-            dummy_file_id = 1
-            self.original_surrogate = OriginalFileSurrogate(self.db)
-            self.original_surrogate.load_file_data(dummy_file_id)
-
-            # 4. 필수 시트 확인
-            if not self.original_surrogate.FileInfoSht:
-                QMessageBox.warning(self, "코드 생성 불가", "코드 생성에 필요한 'FileInfo' 시트($ 포함)를 찾을 수 없습니다.")
-                self.statusBar.showMessage("코드 생성 실패: FileInfo 시트 없음")
-                return
-            if not self.original_surrogate.CalListSht:
-                QMessageBox.warning(self, "코드 생성 불가", "코드 생성에 필요한 CalList 시트($ 포함)가 하나 이상 필요합니다.")
-                self.statusBar.showMessage("코드 생성 실패: CalList 시트 없음")
-                return
-
-            # 5. 코드 생성 실행
-            progress.setValue(25)
-            progress.setLabelText("시트 데이터 분석 중...")
-            QApplication.processEvents()
-
-            result_message = "코드 생성 결과:\n\n"
-            generated_files_info = [] # 생성된 파일 정보 저장 (시트명, 소스파일명, 헤더파일명)
-            has_errors = False
-
-            # V2 방식: 현재 DB의 모든 시트 직접 조회
-            # 1. 시트들을 그룹별로 분류
-            all_sheets = self.db.get_sheets()
-            dollar_sheets = [s for s in all_sheets if s.get('is_dollar_sheet', False)]
-
-            progress.setValue(30)
-            progress.setLabelText(f"시트 분류 중... ({len(dollar_sheets)}개 $ 시트 발견)")
-            QApplication.processEvents()
-
-            # 2. 그룹별로 시트 분류 (C# CtrlXls.cs 88-114행 로직)
-            d_xls = {}  # 그룹명 -> {FileInfoSht, CalListSht[]} 매핑
-
-            for i, sheet_info in enumerate(dollar_sheets):
-                # 진행률 업데이트 (시트 분류 단계) - 더 자주 업데이트
-                if i % 2 == 0:  # 2개마다 업데이트 (더 자주)
-                    progress_val = 30 + int((i / len(dollar_sheets)) * 20)  # 30-50% 범위
-                    progress.setValue(progress_val)
-                    progress.setLabelText(f"시트 분류 중... ({i+1}/{len(dollar_sheets)}) - {sheet_info['name']}")
-                    QApplication.processEvents()
-
-                    # 취소 확인
-                    if progress.wasCanceled():
-                        raise InterruptedError("사용자가 코드 생성을 취소했습니다.")
-
-                sheet_name = sheet_info['name']
-                logging.info(f"시트 분류 중: '{sheet_name}'")
-
-                # $(그룹명)시트명 패턴 파싱
-                if sheet_name.startswith("$(") and ")" in sheet_name:
-                    # $를 제거하고 파싱
-                    temp_name = sheet_name[1:]  # $ 제거
-                    temp_sht_name = temp_name.split(')')
-                    sht_naming = temp_sht_name[0].replace("(", "")  # 그룹명 (예: "InvCfg")
-                    sht_def_name = temp_sht_name[1]  # 시트명 (예: "_MV_RWD_PROJ", "FileInfo")
-
-                    logging.info(f"  → 그룹 패턴 - 그룹: '{sht_naming}', 타입: '{sht_def_name}'")
-
-                    # 그룹이 없으면 생성
-                    if sht_naming not in d_xls:
-                        d_xls[sht_naming] = {
-                            'FileInfoSht': None,
-                            'CalListSht': []
-                        }
-
-                    # FileInfo 시트인지 CalList 시트인지 구분
-                    if sht_def_name == "FileInfo":
-                        # FileInfo 시트 데이터 로드
-                        fileinfo_sheet_data = self.db.get_sheet_data(sheet_info['id'])
-                        fileinfo_sht_info = DataParser.prepare_sheet_for_existing_code(sheet_name, fileinfo_sheet_data)
-                        d_xls[sht_naming]['FileInfoSht'] = fileinfo_sht_info
-                        logging.info(f"  → FileInfo 시트 등록: 그룹 '{sht_naming}'")
-                    else:
-                        # CalList 시트 데이터 로드
-                        callist_sheet_data = self.db.get_sheet_data(sheet_info['id'])
-                        callist_sht_info = DataParser.prepare_sheet_for_existing_code(sheet_name, callist_sheet_data)
-                        d_xls[sht_naming]['CalListSht'].append(callist_sht_info)
-                        logging.info(f"  → CalList 시트 등록: 그룹 '{sht_naming}' 타입 '{sht_def_name}'")
-
-                elif sheet_name.startswith("$") and not sheet_name.startswith("$("):
-                    # 패턴 2: $시트타입 (그룹명 없음 - C# 레거시 호환)
-                    sheet_type = sheet_name[1:].strip()  # $ 제거 및 공백 제거
-                    group_name = "Default"  # C# 레거시와 동일한 기본 그룹명
-
-                    logging.info(f"  → 단순 패턴 (C# 호환) - 그룹: '{group_name}', 타입: '{sheet_type}'")
-
-                    if group_name not in d_xls:
-                        d_xls[group_name] = {
-                            'FileInfoSht': None,
-                            'CalListSht': []
-                        }
-
-                    if sheet_type == "FileInfo":
-                        # FileInfo 시트 데이터 로드
-                        fileinfo_sheet_data = self.db.get_sheet_data(sheet_info['id'])
-                        fileinfo_sht_info = DataParser.prepare_sheet_for_existing_code(sheet_name, fileinfo_sheet_data)
-                        d_xls[group_name]['FileInfoSht'] = fileinfo_sht_info
-                        logging.info(f"  → FileInfo 시트 등록: 그룹 '{group_name}' (C# 호환 모드)")
-                    elif sheet_type in ["CalData", "CalList", "Caldata"] or sheet_type.startswith("_") or "UNDEFINED" in sheet_type:
-                        # CalData, CalList, Caldata, _로 시작하는 프로젝트 시트, UNDEFINED 시트 모두 CalList로 처리
-                        callist_sheet_data = self.db.get_sheet_data(sheet_info['id'])
-                        callist_sht_info = DataParser.prepare_sheet_for_existing_code(sheet_name, callist_sheet_data)
-                        d_xls[group_name]['CalListSht'].append(callist_sht_info)
-                        logging.info(f"  → CalList 시트 등록: 그룹 '{group_name}' 타입 '{sheet_type}' (C# 호환)")
-                    else:
-                        # 알 수 없는 타입도 CalList로 처리 (C# 레거시 호환성)
-                        callist_sheet_data = self.db.get_sheet_data(sheet_info['id'])
-                        callist_sht_info = DataParser.prepare_sheet_for_existing_code(sheet_name, callist_sheet_data)
-                        d_xls[group_name]['CalListSht'].append(callist_sht_info)
-                        logging.info(f"  → 알 수 없는 타입을 CalList로 등록: 그룹 '{group_name}' 타입 '{sheet_type}' (C# 호환 모드)")
-
-                else:
-                    logging.warning(f"  → 인식되지 않는 시트 패턴: '{sheet_name}'")
-
-            # 그룹별 분류 결과 로깅
-            logging.info(f"그룹별 분류 결과: {len(d_xls)}개 그룹")
-            for group_name, group_data in d_xls.items():
-                fileinfo_count = 1 if group_data["FileInfoSht"] else 0
-                callist_count = len(group_data["CalListSht"])
-                logging.info(f"  그룹 '{group_name}': FileInfo {fileinfo_count}개, CalList {callist_count}개")
-
-            progress.setValue(50)
-            progress.setLabelText(f"코드 생성 시작... ({len(d_xls)}개 그룹)")
-            QApplication.processEvents()
-
-            self.statusBar.showMessage(f"총 {len(d_xls)}개 그룹에 대한 코드 생성 시작...")
-
-            # 3. 각 그룹별로 코드 생성 (하나의 파일로)
-            for group_idx, (group_name, group_data) in enumerate(d_xls.items()):
-                # 진행률 업데이트 (코드 생성 단계)
-                progress_val = 50 + int((group_idx / len(d_xls)) * 45)  # 50-95% 범위
-                progress.setValue(progress_val)
-                progress.setLabelText(f"'{group_name}' 그룹 처리 중 ({group_idx+1}/{len(d_xls)})")
-                QApplication.processEvents()
-
-                # 취소 확인
-                if progress.wasCanceled():
-                    raise InterruptedError("사용자가 코드 생성을 취소했습니다.")
-
-                result_message += f"\n--- 그룹 {group_idx + 1}: {group_name} ---\n"
-                logging.info(f"Processing group [{group_idx+1}/{len(d_xls)}]: '{group_name}'")
-                self.statusBar.showMessage(f"'{group_name}' 그룹 처리 중 ({group_idx+1}/{len(d_xls)})...")
-
-                # 그룹 검증
-                if not group_data['FileInfoSht']:
-                    result_message += f"❌ FileInfo 시트를 찾을 수 없습니다: $({group_name})FileInfo\n\n"
-                    logging.error(f"No FileInfo sheet found for group '{group_name}'")
-                    has_errors = True
-                    continue
-
-                if not group_data['CalListSht']:
-                    result_message += f"❌ CalList 시트를 찾을 수 없습니다: $({group_name})CalList\n\n"
-                    logging.error(f"No CalList sheets found for group '{group_name}'")
-                    has_errors = True
-                    continue
-
-                result_message += f"✅ FileInfo: {group_data['FileInfoSht'].Name}\n"
-                result_message += f"✅ CalList 시트 수: {len(group_data['CalListSht'])}\n"
-                for cal_sheet in group_data['CalListSht']:
-                    result_message += f"   - {cal_sheet.Name}\n"
-
-                # 글로벌 상태 초기화
-                Info.ErrList = []
-                Info.FileList = []
-                Info.MkFileNum = 0
-                Info.ErrNameSize = 0
-
-                # 임시 위젯 생성
-                lb_src = QListWidget()
-                lb_hdr = QListWidget()
-
-                # 그룹의 모든 시트를 포함하는 서로게이트 객체 생성
-                current_sheet_surrogate = OriginalFileSurrogate(self.db)
-                current_sheet_surrogate.FileInfoSht = group_data['FileInfoSht']
-                current_sheet_surrogate.CalListSht = group_data['CalListSht']
-
-                try:
-                    # 출력 리스트 초기화 (그룹별로 독립적인 코드 생성)
-                    lb_src.clear()
-                    lb_hdr.clear()
-
-                    # MakeCode 객체 생성
-                    make_code = MakeCode(current_sheet_surrogate, lb_src, lb_hdr)
-
-                    # 진행률 콜백 함수 정의 (더 상세한 피드백)
-                    def detailed_progress_callback(progress_val, message):
-                        if progress.wasCanceled():
-                            raise InterruptedError("사용자가 코드 생성을 취소했습니다.")
-
-                        # 전체 진행률 계산 (그룹별 진행률 반영)
-                        group_progress = 50 + int((group_idx / len(d_xls)) * 45)  # 50-95% 범위
-                        total_progress = min(95, group_progress + int(progress_val * 0.45 / 100))
-
-                        progress.setValue(total_progress)
-                        progress.setLabelText(f"[{group_idx+1}/{len(d_xls)}] {group_name}: {message}")
-                        QApplication.processEvents()
-
-                    # 시트 정보 검증 (C# 버전과 동일한 순서)
-                    if make_code.ChkShtInfo():
-                        error_msgs = "\n".join(Info.ErrList) if Info.ErrList else "알 수 없는 검증 오류"
-                        result_message += f"❌ 그룹 '{group_name}' 정보 검증 오류:\n{error_msgs}\n\n"
-                        logging.error(f"Sheet validation failed for group '{group_name}': {error_msgs}")
-                        has_errors = True
-                        Info.ErrList = []
-                        continue
-
-                    # 타겟 파일명 결정 (그룹명 기반)
-                    # FileInfo 시트에서 파일명 읽기 시도
-                    fileinfo_sht = group_data['FileInfoSht']
-                    base_name = group_name  # 기본값은 그룹명
-
-                    # FileInfo 시트에서 실제 파일명 읽기
-                    if fileinfo_sht and fileinfo_sht.Data:
-                        # S_FILE 정보 읽기 (8행 2열)
-                        s_file = Info.ReadCell(fileinfo_sht.Data, 8, 2)
-                        if s_file and s_file.endswith('.c'):
-                            base_name = s_file[:-2]  # .c 확장자 제거
-
-                    target_file_name = f"{base_name}.c"
-
-                    # 코드 읽기 및 변환 - 진행률 콜백 사용
-                    make_code.ReadXlstoCode(detailed_progress_callback)
-                    make_code.ConvXlstoCode(source_file_name, target_file_name, detailed_progress_callback)
-
-                    # 변환 중 오류 확인
-                    if Info.ErrList:
-                         error_msgs = "\n".join(Info.ErrList)
-                         result_message += f"❌ 그룹 '{group_name}' 코드 변환 중 오류:\n{error_msgs}\n\n"
-                         logging.error(f"Code conversion failed for group '{group_name}': {error_msgs}")
-                         has_errors = True
-                         Info.ErrList = []
-                         continue
-
-                    # 파일 이름 결정
-                    src_filename = f"{base_name}.c"
-                    hdr_filename = f"{base_name}.h"
-
-                    # 파일 저장 경로
-                    src_file_path = os.path.join(output_dir, src_filename)
-                    hdr_file_path = os.path.join(output_dir, hdr_filename)
-
-                    # 소스 파일 저장
-                    with open(src_file_path, 'w', encoding='utf-8') as f_src:
-                        for i in range(lb_src.count()):
-                            f_src.write(lb_src.item(i).text() + '\n')
-
-                    # 헤더 파일 저장
-                    with open(hdr_file_path, 'w', encoding='utf-8') as f_hdr:
-                        for i in range(lb_hdr.count()):
-                            f_hdr.write(lb_hdr.item(i).text() + '\n')
-
-                    # 성공 메시지 및 파일 정보 기록
-                    result_message += f"✅ 그룹 '{group_name}' 코드 생성 완료:\n"
-                    result_message += f"   - 소스 파일: {src_filename}\n"
-                    result_message += f"   - 헤더 파일: {hdr_filename}\n\n"
-                    generated_files_info.append({
-                        "sheet_name": group_name,
-                        "src_file": src_filename,
-                        "hdr_file": hdr_filename
-                    })
-                    logging.info(f"Code generated successfully for group '{group_name}': {src_filename}, {hdr_filename}")
-
-                except Exception as sheet_error:
-                    error_msg = f"그룹 '{group_name}' 처리 중 예외 발생: {str(sheet_error)}"
-                    result_message += f"❌ {error_msg}\n\n"
-                    logging.error(f"{error_msg}\n{traceback.format_exc()}")
-                    has_errors = True
-                finally:
-                    # MakeCode 객체 정리 (필요한 경우)
-                    if 'make_code' in locals() and hasattr(make_code, 'reset_for_new_file'):
-                        make_code.reset_for_new_file()
-                    # 임시 위젯 정리
-                    del lb_src
-                    del lb_hdr
-
-            # 6. 최종 결과 표시 - 더 상세한 완료 메시지
-            progress.setValue(95)
-            progress.setLabelText("결과 정리 중...")
-            QApplication.processEvents()
-
-            if has_errors:
-                final_msg = f"코드 생성 완료 (일부 오류 발생): {len(d_xls)}개 그룹 중 일부에서 오류"
-                logging.warning("Code generation completed with errors.")
+            # 상태바 업데이트
+            if "완료" in result_message:
+                self.statusBar.showMessage(f"코드 생성 완료: {len(generated_files_info)}개 파일 생성")
             else:
-                final_msg = f"코드 생성 완료: 모든 {len(d_xls)}개 그룹 성공"
-                logging.info("Code generation completed successfully.")
+                self.statusBar.showMessage("코드 생성 중 오류 발생")
 
-            progress.setValue(100)
-            progress.setLabelText(f"완료 {len(generated_files_info)}개 파일 생성됨")
-            QApplication.processEvents()
-
-            # 잠시 완료 메시지 표시
-            import time
-            time.sleep(0.5)
-
-            self.statusBar.showMessage(final_msg)
             progress.close()
-
-            self.show_code_generation_result(result_message, output_dir, generated_files_info)
 
         except InterruptedError as e:
             logging.info(f"사용자가 코드 생성을 취소했습니다: {str(e)}")
             if 'progress' in locals():
                 progress.close()
             QMessageBox.information(self, "코드 생성 취소", "코드 생성이 취소되었습니다.")
-        except TimeoutError as e:
-            logging.warning(f"코드 생성 타임아웃: {str(e)}")
-            if 'progress' in locals():
-                progress.close()
-            QMessageBox.warning(self, "코드 생성 타임아웃", str(e))
-        except MemoryError as e:
-            logging.error(f"메모리 부족 오류: {str(e)}")
-            if 'progress' in locals():
-                progress.close()
-            QMessageBox.critical(self, "메모리 부족",
-                               f"메모리 사용량이 한계를 초과했습니다.\n\n{str(e)}\n\n"
-                               "더 작은 데이터베이스로 나누어 처리하거나 시스템 메모리를 늘려주세요.")
         except Exception as e:
             error_msg = f"코드 생성 과정 중 예기치 않은 오류 발생: {str(e)}"
             logging.critical(f"{error_msg}\n{traceback.format_exc()}")
@@ -3016,17 +2877,19 @@ class DBExcelEditor(QMainWindow):
                 progress.close()
             QMessageBox.critical(self, "코드 생성 오류", error_msg)
             self.statusBar.showMessage("코드 생성 중 심각한 오류 발생")
-        finally:
-            # 진행률 대화상자가 열려있다면 닫기
-            if 'progress' in locals() and progress.isVisible():
-                progress.close()
 
-    def generate_code_for_multiple_dbs_improved(self, selected_dbs: List['DBHandlerV2'], output_dir: str):
-        """개선된 다중 DB 코드 생성 (배치 처리) - 응답성 개선"""
+    def generate_code_for_single_db(self, selected_db: 'DBHandlerV2', output_dir: str):
+        """기존 호환성을 위한 래퍼 함수 - 통합 함수로 리다이렉트"""
+        return self.generate_code_for_single_db_unified(selected_db, output_dir)
+
+        # 이 부분은 이제 통합 함수에서 처리되므로 제거됨
+
+    def generate_code_for_multiple_dbs_unified(self, selected_dbs: List['DBHandlerV2'], output_dir: str):
+        """통합된 다중 DB 코드 생성 함수"""
         import time
 
         try:
-            logging.info(f"=== 개선된 다중 DB 코드 생성 시작: {len(selected_dbs)}개 DB ===")
+            logging.info(f"=== 통합 다중 DB 코드 생성 시작: {len(selected_dbs)}개 DB ===")
             start_time = time.time()
 
             # 진행률 대화상자 생성
@@ -3049,23 +2912,23 @@ class DBExcelEditor(QMainWindow):
                 progress.setValue(i)
                 QApplication.processEvents()
 
-                # 타임아웃 체크 (전체 다중 DB 처리에 대해 1시간 제한)
+                # 타임아웃 체크
                 elapsed_time = time.time() - start_time
-                if elapsed_time > 3600:  # 1시간
+                if elapsed_time > CodeGenerationConstants.MULTI_DB_TIMEOUT:
                     logging.warning(f"다중 DB 코드 생성 타임아웃: {elapsed_time:.1f}초 경과")
                     failed_generations.append({
                         'db_name': db_name,
-                        'error': f'전체 처리 시간 초과 (1시간 제한)',
+                        'error': f'전체 처리 시간 초과 ({CodeGenerationConstants.MULTI_DB_TIMEOUT}초 제한)',
                         'output_dir': 'N/A'
                     })
                     break
 
                 try:
-                    # 각 DB별 출력 디렉토리 생성 (DB명 폴더)
+                    # 각 DB별 출력 디렉토리 생성
                     db_output_dir = os.path.join(output_dir, os.path.splitext(db_name)[0])
                     os.makedirs(db_output_dir, exist_ok=True)
 
-                    # V2 구조: 시트 기반 코드 생성 확인
+                    # $ 시트 확인
                     sheets = db_handler.get_sheets()
                     dollar_sheets = [s for s in sheets if s.get('is_dollar_sheet', False)]
 
@@ -3080,40 +2943,21 @@ class DBExcelEditor(QMainWindow):
 
                     logging.info(f"다중 DB 코드 생성 [{i+1}/{len(selected_dbs)}]: {db_name} ({len(dollar_sheets)}개 $ 시트)")
 
-                    # 코드 생성 전 파일 목록 수집 (기존 파일 추적)
-                    existing_files = set()
-                    if os.path.exists(db_output_dir):
-                        for file_name in os.listdir(db_output_dir):
-                            if file_name.endswith(('.c', '.h')):
-                                existing_files.add(file_name)
-
-                    logging.info(f"코드 생성 전 기존 파일: {len(existing_files)}개 - {list(existing_files)}")
-
-                    # 실제 코드 생성 실행 (그룹별 처리 버전 사용)
-                    result_message, generated_files_info = self.generate_code_for_single_db_copy_with_tracking(db_handler, db_output_dir)
+                    # 통합 코드 생성 함수 호출 (결과창 표시 안함)
+                    result_message, generated_files_info = self.generate_code_unified(
+                        db_handler, db_output_dir, progress_dialog=None,
+                        show_result=False, return_file_info=True
+                    )
 
                     logging.info(f"코드 생성 완료: 결과 메시지 길이 {len(result_message)}, 파일 정보 {len(generated_files_info)}개")
 
-                    # 실제 생성된 파일만 수집 (코드 생성 후 새로 생긴 파일들)
+                    # 생성된 파일 정보 처리
                     generated_files = []
-                    if os.path.exists(db_output_dir):
-                        for file_name in os.listdir(db_output_dir):
-                            if file_name.endswith(('.c', '.h')) and file_name not in existing_files:
-                                file_path = os.path.join(db_output_dir, file_name)
-                                file_size = os.path.getsize(file_path)
-                                generated_files.append({
-                                    'name': file_name,
-                                    'size': file_size,
-                                    'type': 'C 소스' if file_name.endswith('.c') else 'C 헤더'
-                                })
-
-                    # generated_files_info에서도 파일 정보 추가 (중복 제거)
                     for file_info in generated_files_info:
                         src_file = file_info.get('src_file')
                         hdr_file = file_info.get('hdr_file')
 
-                        # 소스 파일 추가 (중복 체크)
-                        if src_file and not any(f['name'] == src_file for f in generated_files):
+                        if src_file:
                             src_path = file_info.get('src_path')
                             if src_path and os.path.exists(src_path):
                                 generated_files.append({
@@ -3121,10 +2965,8 @@ class DBExcelEditor(QMainWindow):
                                     'size': os.path.getsize(src_path),
                                     'type': 'C 소스'
                                 })
-                                logging.info(f"추가된 소스 파일: {src_file} ({os.path.getsize(src_path)} bytes)")
 
-                        # 헤더 파일 추가 (중복 체크)
-                        if hdr_file and not any(f['name'] == hdr_file for f in generated_files):
+                        if hdr_file:
                             hdr_path = file_info.get('hdr_path')
                             if hdr_path and os.path.exists(hdr_path):
                                 generated_files.append({
@@ -3132,7 +2974,6 @@ class DBExcelEditor(QMainWindow):
                                     'size': os.path.getsize(hdr_path),
                                     'type': 'C 헤더'
                                 })
-                                logging.info(f"추가된 헤더 파일: {hdr_file} ({os.path.getsize(hdr_path)} bytes)")
 
                     logging.info(f"최종 생성된 파일 목록: {len(generated_files)}개 - {[f['name'] for f in generated_files]}")
 
@@ -3210,609 +3051,82 @@ class DBExcelEditor(QMainWindow):
             if 'progress' in locals() and progress.isVisible():
                 progress.close()
 
-    def generate_code_for_single_db_v2(self, db_handler: 'DBHandlerV2', output_dir: str) -> str:
-        """V2 구조에 맞는 단일 DB 코드 생성 (디버깅 정보 추가)"""
+    def generate_code_for_multiple_dbs_improved(self, selected_dbs: List['DBHandlerV2'], output_dir: str):
+        """기존 호환성을 위한 래퍼 함수 - 통합 함수로 리다이렉트"""
+        return self.generate_code_for_multiple_dbs_unified(selected_dbs, output_dir)
+
+    def generate_code_unified(self, db_handler: 'DBHandlerV2', output_dir: str,
+                             progress_dialog=None, show_result: bool = True,
+                             return_file_info: bool = False) -> tuple[str, list]:
+        """
+        통합된 코드 생성 함수 - 모든 코드 생성 요구사항을 처리
+
+        Args:
+            db_handler: 데이터베이스 핸들러
+            output_dir: 출력 디렉토리
+            progress_dialog: 진행률 대화상자 (선택사항)
+            show_result: 결과창 표시 여부
+            return_file_info: 파일 정보 반환 여부
+
+        Returns:
+            tuple[str, list]: (결과 메시지, 생성된 파일 정보 리스트)
+        """
         try:
             db_name = os.path.basename(db_handler.db_file)
-            logging.info(f"=== V2 코드 생성 시작: {db_name} ===")
-
-            # V2 방식: 현재 DB의 모든 시트 직접 조회
-            all_sheets = db_handler.get_sheets()
-            dollar_sheets = [s for s in all_sheets if s.get('is_dollar_sheet', False)]
-
-            logging.info(f"시트 분석: 전체 {len(all_sheets)}개, $ 시트 {len(dollar_sheets)}개")
-
-            # 모든 $ 시트 이름 로깅
-            for i, sheet in enumerate(dollar_sheets, 1):
-                logging.info(f"  $ 시트 {i}: '{sheet['name']}' (ID: {sheet['id']})")
-
-            if not dollar_sheets:
-                return f"코드 생성할 $ 시트가 없습니다. (전체 시트: {len(all_sheets)}개)"
-
-            # 시트들을 그룹별로 분류 (디버깅 정보 추가)
-            d_xls = {}  # 그룹명 -> {FileInfoSht, CalListSht[]} 매핑
-
-            for sheet_info in dollar_sheets:
-                sheet_name = sheet_info['name']
-                logging.info(f"시트 이름 파싱: '{sheet_name}'")
-
-                # $ 시트 이름 파싱: 다양한 패턴 지원
-                if sheet_name.startswith("$(") and ")" in sheet_name:
-                    # 패턴 1: $(GroupName)SheetType
-                    temp_name = sheet_name[1:]  # $ 제거
-                    temp_sht_name = temp_name.split(')')
-                    group_name = temp_sht_name[0].replace("(", "")
-                    sheet_type = temp_sht_name[1] if len(temp_sht_name) > 1 else ""
-
-                    logging.info(f"  → 그룹: '{group_name}', 타입: '{sheet_type}'")
-
-                    if group_name not in d_xls:
-                        d_xls[group_name] = {"FileInfoSht": None, "CalListSht": []}
-
-                    if sheet_type == "FileInfo":
-                        d_xls[group_name]["FileInfoSht"] = sheet_info
-                        logging.info(f"  → FileInfo 시트 등록: 그룹 '{group_name}'")
-                    elif sheet_type in ["CalList", "CalData", "Caldata", "COMMON"]:
-                        # 다양한 CalList 시트 타입 지원
-                        d_xls[group_name]["CalListSht"].append(sheet_info)
-                        logging.info(f"  → CalList 시트 등록: 그룹 '{group_name}' 타입 '{sheet_type}' ({len(d_xls[group_name]['CalListSht'])}번째)")
-                    elif sheet_type.startswith("_") or sheet_type == "END":
-                        # 프로젝트별 시트나 END 시트도 CalList로 처리
-                        d_xls[group_name]["CalListSht"].append(sheet_info)
-                        logging.info(f"  → 프로젝트 시트를 CalList로 등록: 그룹 '{group_name}' 타입 '{sheet_type}' ({len(d_xls[group_name]['CalListSht'])}번째)")
-                    else:
-                        logging.warning(f"  → 알 수 없는 시트 타입: '{sheet_type}' (그룹: '{group_name}')")
-
-                elif sheet_name.startswith("$") and not sheet_name.startswith("$("):
-                    # 패턴 2: $FileInfo, $CalData 등 (그룹명 없는 단순 패턴)
-                    sheet_type = sheet_name[1:].strip()  # $ 제거 및 공백 제거
-                    group_name = "Default"  # 기본 그룹명
-
-                    logging.info(f"  → 단순 패턴 - 그룹: '{group_name}', 타입: '{sheet_type}'")
-
-                    if group_name not in d_xls:
-                        d_xls[group_name] = {"FileInfoSht": None, "CalListSht": []}
-
-                    if sheet_type == "FileInfo":
-                        d_xls[group_name]["FileInfoSht"] = sheet_info
-                        logging.info(f"  → FileInfo 시트 등록: 그룹 '{group_name}' (단순 패턴)")
-                    elif sheet_type in ["CalData", "CalList", "Caldata"] or sheet_type.startswith("_") or "UNDEFINED" in sheet_type:
-                        # CalData, CalList, Caldata, _로 시작하는 프로젝트 시트, UNDEFINED 시트 모두 CalList로 처리
-                        d_xls[group_name]["CalListSht"].append(sheet_info)
-                        logging.info(f"  → CalList 시트 등록: 그룹 '{group_name}' 타입 '{sheet_type}' (단순 패턴, C# 호환)")
-                    else:
-                        # 알 수 없는 타입도 CalList로 처리 (C# 레거시 호환성 - 04_EVTC387 출력 관련 Cal.xlsx 지원)
-                        d_xls[group_name]["CalListSht"].append(sheet_info)
-                        logging.info(f"  → 알 수 없는 타입을 CalList로 등록: 그룹 '{group_name}' 타입 '{sheet_type}' (C# 호환 모드)")
-
-                else:
-                    logging.warning(f"  → 시트 이름 패턴 불일치: '{sheet_name}' ($ 패턴 아님)")
-
-            # 그룹별 분류 결과 로깅
-            logging.info(f"그룹별 분류 결과: {len(d_xls)}개 그룹")
-            for group_name, group_data in d_xls.items():
-                fileinfo_count = 1 if group_data["FileInfoSht"] else 0
-                callist_count = len(group_data["CalListSht"])
-                logging.info(f"  그룹 '{group_name}': FileInfo {fileinfo_count}개, CalList {callist_count}개")
-
-            # 코드 생성 실행
-            result_message = "V2 다중 DB 코드 생성 결과:\n\n"
-            generated_count = 0
-            error_count = 0
-
-            for group_name, group_data in d_xls.items():
-                try:
-                    fileinfo_sheet = group_data["FileInfoSht"]
-                    callist_sheets = group_data["CalListSht"]
-
-                    if not fileinfo_sheet or not callist_sheets:
-                        result_message += f"❌ 그룹 '{group_name}': FileInfo 또는 CalList 시트 누락\n"
-                        error_count += 1
-                        continue
-
-                    # 파일명 결정 (FileInfo 시트의 S_FILE 값 사용)
-                    s_file_value = db_handler.get_cell_value(fileinfo_sheet['id'], 8, 1)
-                    if s_file_value:
-                        base_name = os.path.splitext(s_file_value)[0]
-                    else:
-                        base_name = group_name.lower()
-
-                    # 코드 생성 (간단한 버전)
-                    src_filename = f"{base_name}.c"
-                    hdr_filename = f"{base_name}.h"
-
-                    src_file_path = os.path.join(output_dir, src_filename)
-                    hdr_file_path = os.path.join(output_dir, hdr_filename)
-
-                    # 간단한 코드 생성 (실제 MakeCode 로직 대신)
-                    with open(src_file_path, 'w', encoding='utf-8') as f:
-                        f.write(f"// Generated source file for {group_name}\n")
-                        f.write(f"// DB: {os.path.basename(db_handler.db_file)}\n")
-                        f.write(f"#include \"{hdr_filename}\"\n\n")
-                        f.write(f"// Group: {group_name}\n")
-                        f.write(f"// CalList sheets: {len(callist_sheets)}\n")
-
-                    with open(hdr_file_path, 'w', encoding='utf-8') as f:
-                        f.write(f"// Generated header file for {group_name}\n")
-                        f.write(f"// DB: {os.path.basename(db_handler.db_file)}\n")
-                        f.write(f"#ifndef {base_name.upper()}_H\n")
-                        f.write(f"#define {base_name.upper()}_H\n\n")
-                        f.write(f"// Group: {group_name}\n")
-                        f.write(f"#endif // {base_name.upper()}_H\n")
-
-                    result_message += f"✅ 그룹 '{group_name}' 코드 생성 완료:\n"
-                    result_message += f"   - 소스 파일: {src_filename}\n"
-                    result_message += f"   - 헤더 파일: {hdr_filename}\n\n"
-                    generated_count += 1
-
-                except Exception as e:
-                    result_message += f"❌ 그룹 '{group_name}' 처리 중 오류: {str(e)}\n\n"
-                    error_count += 1
-                    logging.error(f"그룹 '{group_name}' 코드 생성 오류: {e}")
-
-            # 최종 결과 메시지
-            if error_count > 0:
-                result_message += f"코드 생성 완료: 성공 {generated_count}개, 실패 {error_count}개"
-            else:
-                result_message += f"모든 {generated_count}개 그룹의 코드 생성이 완료되었습니다."
-
-            return result_message
-
-        except Exception as e:
-            error_msg = f"V2 코드 생성 중 오류: {str(e)}"
-            logging.error(f"{error_msg}\n{traceback.format_exc()}")
-            return f"코드 생성 실패: {error_msg}"
-
-    def generate_code_for_single_db_real(self, db_handler: 'DBHandlerV2', output_dir: str, progress_dialog=None) -> str:
-        """단일 DB와 동일한 방식으로 실제 MakeCode를 사용한 코드 생성 - 응답성 개선"""
-        import time
-
-        try:
-            db_name = os.path.basename(db_handler.db_file)
-            logging.info(f"=== 실제 MakeCode 사용 코드 생성 시작: {db_name} ===")
-            start_time = time.time()
+            logging.info(f"=== 통합 코드 생성 시작: {db_name} ===")
 
             # 진행률 콜백 함수 정의
-            def progress_callback(progress, message):
+            def progress_callback(progress_val: int, message: str):
                 if progress_dialog:
-                    progress_dialog.setValue(progress)
+                    progress_dialog.setValue(progress_val)
                     progress_dialog.setLabelText(message)
                     QApplication.processEvents()
 
-                    # 사용자가 취소했는지 확인
                     if progress_dialog.wasCanceled():
                         raise InterruptedError("사용자가 코드 생성을 취소했습니다.")
 
-            # V2 구조에서는 파일 개념이 없으므로 가상 파일 ID 사용
-            virtual_file_id = 1  # V2에서는 항상 가상 파일 ID 사용
-            logging.info(f"V2 구조: 가상 파일 ID {virtual_file_id} 사용 (파일 개념 없음)")
-
             if progress_dialog:
-                progress_callback(10, "파일 데이터 로드 중...")
+                progress_callback(10, "시트 분류 중...")
 
-            # 기존 코드와의 호환성을 위한 OriginalFileSurrogate 사용 (단일 DB와 동일)
-            file_surrogate = OriginalFileSurrogate(db_handler)
-            file_surrogate.load_file_data(virtual_file_id)
+            # 1. 시트 그룹별 분류 (헬퍼 함수 사용)
+            d_xls = CodeGenerationHelper.classify_sheets_by_group(db_handler)
 
-            logging.info(f"OriginalFileSurrogate 로드 완료: 파일 ID {virtual_file_id}")
-
-            if progress_dialog:
-                progress_callback(20, "코드 생성기 초기화 중...")
-
-            # 코드 생성기 실행 (올바른 인수 전달)
-            from code_generator.make_code import MakeCode
-            from PySide6.QtWidgets import QListWidget
-
-            # 임시 위젯 생성 (MakeCode 생성자에 필요)
-            lb_src = QListWidget()
-            lb_hdr = QListWidget()
-
-            code_generator = MakeCode(file_surrogate, lb_src, lb_hdr)
-
-            logging.info(f"MakeCode 인스턴스 생성 완료, 코드 생성 시작...")
-
-            # Info 클래스 전역 상태 초기화 (다중 DB 처리 시 이전 상태 제거)
-            Info.ErrList = []
-            Info.FileList = []
-            Info.MkFileNum = 0
-            Info.ErrNameSize = 0
-
-            if progress_dialog:
-                progress_callback(30, "시트 데이터 읽기 중...")
-
-            # 시트 정보 검증 먼저 수행 (C# 버전과 동일한 순서)
-            if code_generator.ChkShtInfo():
-                error_msg = "시트 정보 검증에 실패했습니다."
-                if Info.ErrList:
-                    error_details = "\n".join(Info.ErrList)
-                    error_msg += f"\n상세 오류:\n{error_details}"
-                logging.error(error_msg)
-                raise RuntimeError(error_msg)
-
-            # 코드 생성 실행 (진행률 콜백 전달)
-            code_generator.ReadXlstoCode(progress_callback)
-
-            if progress_dialog:
-                progress_callback(80, "코드 변환 중...")
-
-            code_generator.ConvXlstoCode(os.path.basename(db_handler.db_file), "output.c", progress_callback)
-
-            if progress_dialog:
-                progress_callback(90, "파일 저장 중...")
-
-            # 생성된 코드를 파일로 저장
-            src_files = []
-            hdr_files = []
-
-            # 소스 파일 저장
-            if lb_src.count() > 0:
-                src_filename = f"{os.path.splitext(os.path.basename(db_handler.db_file))[0]}.c"
-                src_file_path = os.path.join(output_dir, src_filename)
-                with open(src_file_path, 'w', encoding='utf-8') as f:
-                    for i in range(lb_src.count()):
-                        f.write(lb_src.item(i).text() + '\n')
-                src_files.append(src_filename)
-
-            # 헤더 파일 저장
-            if lb_hdr.count() > 0:
-                hdr_filename = f"{os.path.splitext(os.path.basename(db_handler.db_file))[0]}.h"
-                hdr_file_path = os.path.join(output_dir, hdr_filename)
-                with open(hdr_file_path, 'w', encoding='utf-8') as f:
-                    for i in range(lb_hdr.count()):
-                        f.write(lb_hdr.item(i).text() + '\n')
-                hdr_files.append(hdr_filename)
-
-            if progress_dialog:
-                progress_callback(100, "코드 생성 완료")
-
-            result_message = f"코드 생성 완료: {len(src_files)}개 소스 파일, {len(hdr_files)}개 헤더 파일 (소요시간: {time.time() - start_time:.1f}초)"
-
-            logging.info(f"MakeCode 코드 생성 완료: {result_message}")
-
-            return result_message
-
-        except InterruptedError as e:
-            logging.info(f"코드 생성 취소: {str(e)}")
-            return f"코드 생성 취소: {str(e)}"
-        except TimeoutError as e:
-            logging.warning(f"코드 생성 타임아웃: {str(e)}")
-            return f"코드 생성 타임아웃: {str(e)}"
-        except Exception as e:
-            error_msg = f"실제 MakeCode 코드 생성 중 오류: {str(e)}"
-            logging.error(f"{error_msg}\n{traceback.format_exc()}")
-            return f"코드 생성 실패: {error_msg}"
-
-    def generate_code_for_single_db_copy(self, db_handler: 'DBHandlerV2', output_dir: str) -> str:
-        """단일 DB 코드 생성 로직을 그대로 복사 (다중 DB용)"""
-        try:
-            db_name = os.path.basename(db_handler.db_file)
-            logging.info(f"=== 단일 DB 로직 복사 코드 생성 시작: {db_name} ===")
-
-            # 1. OriginalFileSurrogate 생성 (단일 DB와 동일)
-            virtual_file_id = 1
-            current_sheet_surrogate = OriginalFileSurrogate(db_handler)
-            current_sheet_surrogate.load_file_data(virtual_file_id)
-
-            # 2. 시트 그룹별 분류 (단일 DB와 동일)
-            sheets = db_handler.get_sheets()
-            dollar_sheets = [s for s in sheets if s.get('is_dollar_sheet', False)]
-
-            if not dollar_sheets:
-                return "코드 생성할 $ 시트가 없습니다."
-
-            # 그룹별 분류
-            d_xls = {}
-            logging.info(f"시트 그룹별 분류 시작: {len(dollar_sheets)}개 $ 시트")
-
-            for sheet_info in dollar_sheets:
-                sheet_name = sheet_info['name']
-                logging.info(f"시트 분류 중: '{sheet_name}'")
-
-                if sheet_name.startswith("$(") and ")" in sheet_name:
-                    temp_name = sheet_name[1:]
-                    temp_sht_name = temp_name.split(')')
-                    group_name = temp_sht_name[0].replace("(", "")
-                    sheet_type = temp_sht_name[1] if len(temp_sht_name) > 1 else ""
-
-                    if group_name not in d_xls:
-                        d_xls[group_name] = {"FileInfoSht": None, "CalListSht": []}
-
-                    if sheet_type == "FileInfo":
-                        d_xls[group_name]["FileInfoSht"] = sheet_info
-                        logging.info(f"  → FileInfo 시트 등록: 그룹 '{group_name}'")
-                    elif sheet_type in ["CalList", "CalData", "Caldata", "COMMON"] or sheet_type.startswith("_") or sheet_type == "END":
-                        d_xls[group_name]["CalListSht"].append(sheet_info)
-                        logging.info(f"  → CalList 시트 등록: 그룹 '{group_name}' 타입 '{sheet_type}'")
-
-                elif sheet_name.startswith("$") and not sheet_name.startswith("$("):
-                    sheet_type = sheet_name[1:].strip()
-                    group_name = "Default"
-
-                    if group_name not in d_xls:
-                        d_xls[group_name] = {"FileInfoSht": None, "CalListSht": []}
-
-                    if sheet_type == "FileInfo":
-                        d_xls[group_name]["FileInfoSht"] = sheet_info
-                    elif sheet_type in ["CalData", "CalList", "Caldata"] or sheet_type.startswith("_") or "UNDEFINED" in sheet_type:
-                        # CalData, CalList, Caldata, _로 시작하는 프로젝트 시트, UNDEFINED 시트 모두 CalList로 처리
-                        d_xls[group_name]["CalListSht"].append(sheet_info)
-                    else:
-                        # 알 수 없는 타입도 CalList로 처리 (C# 레거시 호환성)
-                        d_xls[group_name]["CalListSht"].append(sheet_info)
-
-            # 그룹별 분류 결과 로깅
-            logging.info(f"그룹별 분류 완료: {len(d_xls)}개 그룹")
-            for group_name, group_data in d_xls.items():
-                fileinfo_count = 1 if group_data["FileInfoSht"] else 0
-                callist_count = len(group_data["CalListSht"])
-                logging.info(f"  그룹 '{group_name}': FileInfo {fileinfo_count}개, CalList {callist_count}개")
-
-            # 3. 각 그룹별 코드 생성 (단일 DB와 완전히 동일)
-            result_message = ""
-            has_errors = False
-            generated_files_info = []
-
-            for group_name, group_data in d_xls.items():
-                fileinfo_sheet = group_data["FileInfoSht"]
-                callist_sheets = group_data["CalListSht"]
-
-                if not fileinfo_sheet or not callist_sheets:
-                    result_message += f"❌ 그룹 '{group_name}': FileInfo 또는 CalList 시트 누락\n\n"
-                    has_errors = True
-                    continue
-
-                try:
-                    # 각 그룹별로 완전히 독립적인 처리를 위해 전역 상태 초기화
-                    logging.info(f"=== 그룹 '{group_name}' 코드 생성 시작 ===")
-                    logging.info(f"FileInfo: {fileinfo_sheet['name']}")
-                    for i, cal_sheet in enumerate(callist_sheets, 1):
-                        logging.info(f"CalList {i}: {cal_sheet['name']}")
-                    logging.info(f"그룹 '{group_name}' 처리 시작 - 전역 상태 초기화")
-
-                    # Info 클래스의 전역 상태 초기화
-                    if hasattr(Info, 'ErrList'):
-                        Info.ErrList = []
-                    if hasattr(Info, 'FileList'):
-                        Info.FileList = []
-                    if hasattr(Info, 'PrjtList'):
-                        Info.PrjtList = []
-
-                    # 임시 위젯 생성 (단일 DB와 동일)
-                    from PySide6.QtWidgets import QListWidget
-                    lb_src = QListWidget()
-                    lb_hdr = QListWidget()
-
-                    # 각 그룹별로 새로운 OriginalFileSurrogate 생성 (독립적인 상태)
-                    group_surrogate = OriginalFileSurrogate(db_handler)
-                    # 그룹별 시트만 할당 (전체 DB 로드하지 않음)
-                    if fileinfo_sheet:
-                        fileinfo_sheet_data = db_handler.get_sheet_data(fileinfo_sheet['id'])
-                        group_surrogate.FileInfoSht = DataParser.prepare_sheet_for_existing_code(fileinfo_sheet['name'], fileinfo_sheet_data)
-
-                    group_surrogate.CalListSht = []
-                    for cal_sheet in callist_sheets:
-                        cal_sheet_data = db_handler.get_sheet_data(cal_sheet['id'])
-                        cal_sht_info = DataParser.prepare_sheet_for_existing_code(cal_sheet['name'], cal_sheet_data)
-                        group_surrogate.CalListSht.append(cal_sht_info)
-
-                    # MakeCode 객체 생성 (그룹별 독립적인 surrogate 사용)
-                    make_code = MakeCode(group_surrogate, lb_src, lb_hdr)
-
-                    # 시트 정보 검증 (단일 DB와 동일)
-                    if make_code.ChkShtInfo():
-                        error_msgs = "\n".join(Info.ErrList) if Info.ErrList else "알 수 없는 검증 오류"
-                        result_message += f"❌ 그룹 '{group_name}' 정보 검증 오류:\n{error_msgs}\n\n"
-                        has_errors = True
-                        Info.ErrList = []
-                        continue
-
-                    # 타겟 파일명 결정 (그룹별 독립적으로)
-                    base_name = group_name
-
-                    # FileInfo 시트에서 실제 파일명 읽기 (C# 레거시와 동일한 위치: 9행 3열)
-                    if fileinfo_sheet and hasattr(group_surrogate, 'FileInfoSht') and group_surrogate.FileInfoSht:
-                        s_file = Info.ReadCell(group_surrogate.FileInfoSht.Data, 9, 3)  # C# 레거시: 9행 3열
-                        if s_file and s_file.endswith('.c'):
-                            base_name = s_file[:-2]
-                            logging.info(f"그룹 '{group_name}' 파일명 읽기 (9행 3열): {s_file} → {base_name}")
-                        else:
-                            # 9행 3열에서 못 찾으면 다른 위치도 시도
-                            s_file_alt = Info.ReadCell(group_surrogate.FileInfoSht.Data, 8, 2)  # 기존 위치
-                            if s_file_alt and s_file_alt.endswith('.c'):
-                                base_name = s_file_alt[:-2]
-                                logging.info(f"그룹 '{group_name}' 파일명 읽기 (8행 2열 대체): {s_file_alt} → {base_name}")
-                            else:
-                                logging.info(f"그룹 '{group_name}' 기본 파일명 사용: {base_name}")
-                    else:
-                        logging.info(f"그룹 '{group_name}' FileInfo 없음, 기본 파일명 사용: {base_name}")
-
-                    target_file_name = f"{base_name}.c"
-
-                    # 코드 읽기 및 변환 (단일 DB와 동일)
-                    make_code.ReadXlstoCode()
-                    make_code.ConvXlstoCode(db_name, target_file_name)
-
-                    # 변환 중 오류 확인 (단일 DB와 동일)
-                    if Info.ErrList:
-                        error_msgs = "\n".join(Info.ErrList)
-                        result_message += f"❌ 그룹 '{group_name}' 코드 변환 중 오류:\n{error_msgs}\n\n"
-                        has_errors = True
-                        Info.ErrList = []
-                        continue
-
-                    # 파일 저장 (단일 DB와 동일)
-                    src_filename = f"{base_name}.c"
-                    hdr_filename = f"{base_name}.h"
-
-                    src_file_path = os.path.join(output_dir, src_filename)
-                    hdr_file_path = os.path.join(output_dir, hdr_filename)
-
-                    # 소스 파일 저장
-                    with open(src_file_path, 'w', encoding='utf-8') as f_src:
-                        for i in range(lb_src.count()):
-                            f_src.write(lb_src.item(i).text() + '\n')
-
-                    # 헤더 파일 저장
-                    with open(hdr_file_path, 'w', encoding='utf-8') as f_hdr:
-                        for i in range(lb_hdr.count()):
-                            f_hdr.write(lb_hdr.item(i).text() + '\n')
-
-                    result_message += f"✅ 그룹 '{group_name}' 코드 생성 완료: {src_filename}, {hdr_filename}\n\n"
-
-                    generated_files_info.append({
-                        'group': group_name,
-                        'src_file': src_filename,
-                        'hdr_file': hdr_filename,
-                        'src_path': src_file_path,
-                        'hdr_path': hdr_file_path
-                    })
-
-                except Exception as sheet_error:
-                    error_msg = f"그룹 '{group_name}' 처리 중 예외 발생: {str(sheet_error)}"
-                    result_message += f"❌ {error_msg}\n\n"
-                    logging.error(f"{error_msg}\n{traceback.format_exc()}")
-                    has_errors = True
-                finally:
-                    # 각 그룹 처리 후 완전한 정리 (다중 DB 독립성 보장)
-                    logging.info(f"그룹 '{group_name}' 처리 완료 - 상태 정리")
-
-                    # MakeCode 객체 정리
-                    if 'make_code' in locals() and hasattr(make_code, 'reset_for_new_file'):
-                        make_code.reset_for_new_file()
-
-                    # 전역 상태 다시 초기화 (다음 그룹을 위해)
-                    if hasattr(Info, 'ErrList'):
-                        Info.ErrList = []
-                    if hasattr(Info, 'FileList'):
-                        Info.FileList = []
-                    if hasattr(Info, 'PrjtList'):
-                        Info.PrjtList = []
-
-                    # 임시 객체들 정리
-                    if 'group_surrogate' in locals():
-                        del group_surrogate
-                    if 'lb_src' in locals():
-                        del lb_src
-                    if 'lb_hdr' in locals():
-                        del lb_hdr
-                    if 'make_code' in locals():
-                        del make_code
-
-            if has_errors:
-                final_msg = f"DB '{db_name}' 코드 생성 중 일부 오류 발생"
-            else:
-                final_msg = f"DB '{db_name}' 모든 그룹 코드 생성 완료"
-
-            logging.info(f"단일 DB 로직 복사 코드 생성 완료: {final_msg}")
-            return result_message
-
-        except Exception as e:
-            error_msg = f"단일 DB 로직 복사 코드 생성 중 오류: {str(e)}"
-            logging.error(f"{error_msg}\n{traceback.format_exc()}")
-            return f"코드 생성 실패: {error_msg}"
-
-    def generate_code_for_single_db_copy_with_tracking(self, db_handler: 'DBHandlerV2', output_dir: str) -> tuple[str, list]:
-        """파일 생성 추적 기능이 있는 단일 DB 코드 생성 (다중 DB용)"""
-        try:
-            db_name = os.path.basename(db_handler.db_file)
-            logging.info(f"=== 파일 추적 기능 포함 코드 생성 시작: {db_name} ===")
-
-            # 1. 시트 그룹별 분류
-            sheets = db_handler.get_sheets()
-            dollar_sheets = [s for s in sheets if s.get('is_dollar_sheet', False)]
-
-            if not dollar_sheets:
+            if not d_xls:
                 return "코드 생성할 $ 시트가 없습니다.", []
 
-            # 그룹별 분류
-            d_xls = {}
-            logging.info(f"시트 그룹별 분류 시작: {len(dollar_sheets)}개 $ 시트")
+            if progress_dialog:
+                progress_callback(30, f"코드 생성 시작... ({len(d_xls)}개 그룹)")
 
-            for sheet_info in dollar_sheets:
-                sheet_name = sheet_info['name']
-                logging.info(f"시트 분류 중: '{sheet_name}'")
-
-                if sheet_name.startswith("$(") and ")" in sheet_name:
-                    temp_name = sheet_name[1:]
-                    temp_sht_name = temp_name.split(')')
-                    group_name = temp_sht_name[0].replace("(", "")
-                    sheet_type = temp_sht_name[1] if len(temp_sht_name) > 1 else ""
-
-                    if group_name not in d_xls:
-                        d_xls[group_name] = {"FileInfoSht": None, "CalListSht": []}
-
-                    if sheet_type == "FileInfo":
-                        d_xls[group_name]["FileInfoSht"] = sheet_info
-                        logging.info(f"  → FileInfo 시트 등록: 그룹 '{group_name}'")
-                    elif sheet_type in ["CalList", "CalData", "Caldata", "COMMON"] or sheet_type.startswith("_") or sheet_type == "END":
-                        d_xls[group_name]["CalListSht"].append(sheet_info)
-                        logging.info(f"  → CalList 시트 등록: 그룹 '{group_name}' 타입 '{sheet_type}'")
-
-                elif sheet_name.startswith("$") and not sheet_name.startswith("$("):
-                    sheet_type = sheet_name[1:].strip()
-                    group_name = "Default"
-
-                    if group_name not in d_xls:
-                        d_xls[group_name] = {"FileInfoSht": None, "CalListSht": []}
-
-                    if sheet_type == "FileInfo":
-                        d_xls[group_name]["FileInfoSht"] = sheet_info
-                    elif sheet_type in ["CalData", "CalList", "Caldata"] or sheet_type.startswith("_") or "UNDEFINED" in sheet_type:
-                        d_xls[group_name]["CalListSht"].append(sheet_info)
-                    else:
-                        d_xls[group_name]["CalListSht"].append(sheet_info)
-
-            # 그룹별 분류 결과 로깅
-            logging.info(f"그룹별 분류 완료: {len(d_xls)}개 그룹")
-            for group_name, group_data in d_xls.items():
-                fileinfo_count = 1 if group_data["FileInfoSht"] else 0
-                callist_count = len(group_data["CalListSht"])
-                logging.info(f"  그룹 '{group_name}': FileInfo {fileinfo_count}개, CalList {callist_count}개")
-
-            # 2. 각 그룹별 코드 생성 및 파일 추적
-            result_message = ""
-            has_errors = False
+            # 2. 각 그룹별 코드 생성
+            result_message = f"코드 생성 결과 ({db_name}):\n\n"
             generated_files_info = []
+            has_errors = False
 
-            for group_name, group_data in d_xls.items():
-                fileinfo_sheet = group_data["FileInfoSht"]
-                callist_sheets = group_data["CalListSht"]
+            for group_idx, (group_name, group_data) in enumerate(d_xls.items()):
+                # 진행률 업데이트
+                if progress_dialog:
+                    progress_val = 30 + int((group_idx / len(d_xls)) * 60)  # 30-90% 범위
+                    progress_callback(progress_val, f"'{group_name}' 그룹 처리 중 ({group_idx+1}/{len(d_xls)})")
 
-                if not fileinfo_sheet or not callist_sheets:
+                # 그룹 검증
+                if not group_data['FileInfoSht'] or not group_data['CalListSht']:
                     result_message += f"❌ 그룹 '{group_name}': FileInfo 또는 CalList 시트 누락\n\n"
                     has_errors = True
                     continue
 
                 try:
-                    logging.info(f"=== 그룹 '{group_name}' 코드 생성 시작 ===")
-                    logging.info(f"FileInfo: {fileinfo_sheet['name']}")
-                    for i, cal_sheet in enumerate(callist_sheets, 1):
-                        logging.info(f"CalList {i}: {cal_sheet['name']}")
-
-                    # Info 클래스의 전역 상태 초기화
-                    if hasattr(Info, 'ErrList'):
-                        Info.ErrList = []
-                    if hasattr(Info, 'FileList'):
-                        Info.FileList = []
-                    if hasattr(Info, 'PrjtList'):
-                        Info.PrjtList = []
+                    # 전역 상태 초기화
+                    CodeGenerationHelper.initialize_global_state()
 
                     # 임시 위젯 생성
                     from PySide6.QtWidgets import QListWidget
                     lb_src = QListWidget()
                     lb_hdr = QListWidget()
 
-                    # 그룹별 시트만 할당
+                    # 그룹별 서로게이트 객체 생성
                     group_surrogate = OriginalFileSurrogate(db_handler)
-                    if fileinfo_sheet:
-                        fileinfo_sheet_data = db_handler.get_sheet_data(fileinfo_sheet['id'])
-                        group_surrogate.FileInfoSht = DataParser.prepare_sheet_for_existing_code(fileinfo_sheet['name'], fileinfo_sheet_data)
-
-                    group_surrogate.CalListSht = []
-                    for cal_sheet in callist_sheets:
-                        cal_sheet_data = db_handler.get_sheet_data(cal_sheet['id'])
-                        cal_sht_info = DataParser.prepare_sheet_for_existing_code(cal_sheet['name'], cal_sheet_data)
-                        group_surrogate.CalListSht.append(cal_sht_info)
+                    group_surrogate.FileInfoSht = group_data['FileInfoSht']
+                    group_surrogate.CalListSht = group_data['CalListSht']
 
                     # MakeCode 객체 생성
                     make_code = MakeCode(group_surrogate, lb_src, lb_hdr)
@@ -3825,26 +3139,11 @@ class DBExcelEditor(QMainWindow):
                         Info.ErrList = []
                         continue
 
-                    # 타겟 파일명 결정
-                    base_name = group_name
-
-                    # FileInfo 시트에서 실제 파일명 읽기
-                    if fileinfo_sheet and hasattr(group_surrogate, 'FileInfoSht') and group_surrogate.FileInfoSht:
-                        s_file = Info.ReadCell(group_surrogate.FileInfoSht.Data, 9, 3)
-                        if s_file and s_file.endswith('.c'):
-                            base_name = s_file[:-2]
-                            logging.info(f"그룹 '{group_name}' 파일명 읽기 (9행 3열): {s_file} → {base_name}")
-                        else:
-                            s_file_alt = Info.ReadCell(group_surrogate.FileInfoSht.Data, 8, 2)
-                            if s_file_alt and s_file_alt.endswith('.c'):
-                                base_name = s_file_alt[:-2]
-                                logging.info(f"그룹 '{group_name}' 파일명 읽기 (8행 2열 대체): {s_file_alt} → {base_name}")
-                            else:
-                                logging.info(f"그룹 '{group_name}' 기본 파일명 사용: {base_name}")
-                    else:
-                        logging.info(f"그룹 '{group_name}' FileInfo 없음, 기본 파일명 사용: {base_name}")
-
-                    target_file_name = f"{base_name}.c"
+                    # 파일명 결정
+                    base_name = CodeGenerationHelper.get_base_filename_from_fileinfo(
+                        group_data['FileInfoSht'], group_name
+                    )
+                    target_file_name = f"{base_name}{CodeGenerationConstants.C_SOURCE_EXT}"
 
                     # 코드 읽기 및 변환
                     make_code.ReadXlstoCode()
@@ -3858,16 +3157,12 @@ class DBExcelEditor(QMainWindow):
                         Info.ErrList = []
                         continue
 
-                    # 파일 저장 및 추적
-                    src_filename = f"{base_name}.c"
-                    hdr_filename = f"{base_name}.h"
+                    # 파일 저장
+                    src_filename = f"{base_name}{CodeGenerationConstants.C_SOURCE_EXT}"
+                    hdr_filename = f"{base_name}{CodeGenerationConstants.C_HEADER_EXT}"
 
                     src_file_path = os.path.join(output_dir, src_filename)
                     hdr_file_path = os.path.join(output_dir, hdr_filename)
-
-                    # 파일 생성 전 존재 여부 확인
-                    src_existed = os.path.exists(src_file_path)
-                    hdr_existed = os.path.exists(hdr_file_path)
 
                     # 소스 파일 저장
                     with open(src_file_path, 'w', encoding='utf-8') as f_src:
@@ -3879,66 +3174,92 @@ class DBExcelEditor(QMainWindow):
                         for i in range(lb_hdr.count()):
                             f_hdr.write(lb_hdr.item(i).text() + '\n')
 
-                    # 실제 파일 생성 확인
-                    src_created = os.path.exists(src_file_path) and (not src_existed or os.path.getsize(src_file_path) > 0)
-                    hdr_created = os.path.exists(hdr_file_path) and (not hdr_existed or os.path.getsize(hdr_file_path) > 0)
+                    # 성공 메시지 및 파일 정보 기록
+                    result_message += f"✅ 그룹 '{group_name}' 코드 생성 완료:\n"
+                    result_message += f"   - 소스 파일: {src_filename}\n"
+                    result_message += f"   - 헤더 파일: {hdr_filename}\n\n"
 
-                    if src_created or hdr_created:
-                        result_message += f"✅ 그룹 '{group_name}' 코드 생성 완료: {src_filename}, {hdr_filename}\n\n"
-
-                        # 생성된 파일 정보 추적
+                    if return_file_info:
                         generated_files_info.append({
-                            'group': group_name,
-                            'src_file': src_filename if src_created else None,
-                            'hdr_file': hdr_filename if hdr_created else None,
-                            'src_path': src_file_path if src_created else None,
-                            'hdr_path': hdr_file_path if hdr_created else None
+                            "group": group_name,
+                            "src_file": src_filename,
+                            "hdr_file": hdr_filename,
+                            "src_path": src_file_path,
+                            "hdr_path": hdr_file_path
                         })
 
-                        logging.info(f"파일 생성 추적: 그룹 '{group_name}' - 소스: {src_created}, 헤더: {hdr_created}")
-                    else:
-                        result_message += f"⚠️ 그룹 '{group_name}' 파일 생성 실패: 빈 파일 또는 생성 오류\n\n"
-                        has_errors = True
+                    logging.info(f"코드 생성 성공: 그룹 '{group_name}' - {src_filename}, {hdr_filename}")
 
-                except Exception as sheet_error:
-                    error_msg = f"그룹 '{group_name}' 처리 중 예외 발생: {str(sheet_error)}"
+                except Exception as group_error:
+                    error_msg = f"그룹 '{group_name}' 처리 중 예외 발생: {str(group_error)}"
                     result_message += f"❌ {error_msg}\n\n"
                     logging.error(f"{error_msg}\n{traceback.format_exc()}")
                     has_errors = True
                 finally:
-                    # 각 그룹 처리 후 정리
-                    logging.info(f"그룹 '{group_name}' 처리 완료 - 상태 정리")
-
-                    # 전역 상태 초기화
-                    if hasattr(Info, 'ErrList'):
-                        Info.ErrList = []
-                    if hasattr(Info, 'FileList'):
-                        Info.FileList = []
-                    if hasattr(Info, 'PrjtList'):
-                        Info.PrjtList = []
-
-                    # 임시 객체들 정리
-                    if 'group_surrogate' in locals():
-                        del group_surrogate
+                    # 리소스 정리
+                    if 'make_code' in locals() and hasattr(make_code, 'reset_for_new_file'):
+                        make_code.reset_for_new_file()
                     if 'lb_src' in locals():
                         del lb_src
                     if 'lb_hdr' in locals():
                         del lb_hdr
+                    if 'group_surrogate' in locals():
+                        del group_surrogate
                     if 'make_code' in locals():
                         del make_code
 
-            if has_errors:
-                final_msg = f"DB '{db_name}' 코드 생성 중 일부 오류 발생"
-            else:
-                final_msg = f"DB '{db_name}' 모든 그룹 코드 생성 완료"
+            # 최종 결과 처리
+            if progress_dialog:
+                progress_callback(95, "결과 정리 중...")
 
-            logging.info(f"파일 추적 기능 포함 코드 생성 완료: {final_msg} (생성된 파일 정보: {len(generated_files_info)}개)")
+            if has_errors:
+                final_msg = f"코드 생성 완료 (일부 오류 발생): {len(d_xls)}개 그룹 중 일부에서 오류"
+            else:
+                final_msg = f"코드 생성 완료: 모든 {len(d_xls)}개 그룹 성공"
+
+            result_message += final_msg
+            logging.info(f"통합 코드 생성 완료: {final_msg}")
+
+            if progress_dialog:
+                progress_callback(100, f"완료 - {len(generated_files_info)}개 파일 생성됨")
+
+            # 결과창 표시 (옵션)
+            if show_result:
+                self.show_code_generation_result(result_message, output_dir, generated_files_info)
+
             return result_message, generated_files_info
 
+        except InterruptedError as e:
+            logging.info(f"코드 생성 취소: {str(e)}")
+            return f"코드 생성 취소: {str(e)}", []
         except Exception as e:
-            error_msg = f"파일 추적 기능 포함 코드 생성 중 오류: {str(e)}"
+            error_msg = f"통합 코드 생성 중 오류: {str(e)}"
             logging.error(f"{error_msg}\n{traceback.format_exc()}")
             return f"코드 생성 실패: {error_msg}", []
+
+    def generate_code_for_single_db_real(self, db_handler: 'DBHandlerV2', output_dir: str, progress_dialog=None) -> str:
+        """기존 호환성을 위한 래퍼 함수 - 통합 함수로 리다이렉트"""
+        result_message, _ = self.generate_code_unified(
+            db_handler, output_dir, progress_dialog, show_result=False, return_file_info=False
+        )
+        return result_message
+
+    def generate_code_for_single_db_copy(self, db_handler: 'DBHandlerV2', output_dir: str) -> str:
+        """기존 호환성을 위한 래퍼 함수 - 통합 함수로 리다이렉트"""
+        result_message, _ = self.generate_code_unified(
+            db_handler, output_dir, progress_dialog=None, show_result=False, return_file_info=False
+        )
+        return result_message
+
+        # 이 부분은 이제 통합 함수에서 처리되므로 제거됨
+
+    def generate_code_for_single_db_copy_with_tracking(self, db_handler: 'DBHandlerV2', output_dir: str) -> tuple[str, list]:
+        """기존 호환성을 위한 래퍼 함수 - 통합 함수로 리다이렉트 (파일 추적 포함)"""
+        return self.generate_code_unified(
+            db_handler, output_dir, progress_dialog=None, show_result=False, return_file_info=True
+        )
+
+        # 이 부분은 이제 통합 함수에서 처리되므로 제거됨
 
     def call_single_db_function_directly(self, db_handler: 'DBHandlerV2', output_dir: str) -> str:
         """단일 DB 함수를 직접 호출 (가장 간단한 방법)"""
@@ -3980,7 +3301,7 @@ class DBExcelEditor(QMainWindow):
             return f"코드 생성 실패: {error_msg}"
 
     def generate_code_for_single_db_silent(self, selected_db: 'DBHandlerV2', output_dir: str):
-        """단일 DB에 대한 코드 생성 (결과창 표시 안함, 다중 DB용)"""
+        """기존 호환성을 위한 래퍼 함수 - 통합 함수로 리다이렉트 (결과창 표시 안함)"""
         # 선택된 DB로 전환
         if self.db_manager.get_current_db() != selected_db:
             # 선택된 DB의 이름 찾기
@@ -3990,207 +3311,13 @@ class DBExcelEditor(QMainWindow):
                     self.update_current_db_references()
                     break
 
-        try:
-            logging.info(f"Starting silent code generation for DB: {os.path.basename(selected_db.db_file)}")
+        # 통합 함수 호출 (결과창 표시 안함)
+        result_message, _ = self.generate_code_unified(
+            selected_db, output_dir, progress_dialog=None, show_result=False, return_file_info=False
+        )
 
-            # V2 방식: 현재 DB 이름을 원본 파일명으로 사용
-            source_file_name = self.db_manager.current_db_name or "Unknown Source"
-
-            # V2 방식: 직접 시트 데이터 로드 (파일 개념 없음)
-            # 원본 코드 호환을 위한 더미 파일 ID 사용
-            dummy_file_id = 1
-            self.original_surrogate = OriginalFileSurrogate(self.db)
-            self.original_surrogate.load_file_data(dummy_file_id)
-
-            # 필수 시트 확인
-            if not self.original_surrogate.FileInfoSht:
-                logging.warning(f"FileInfo 시트 없음: {os.path.basename(selected_db.db_file)}")
-                return
-            if not self.original_surrogate.CalListSht:
-                logging.warning(f"CalList 시트 없음: {os.path.basename(selected_db.db_file)}")
-                return
-
-            # V2 방식: 현재 DB의 모든 시트 직접 조회
-            # 1. 시트들을 그룹별로 분류
-            all_sheets = self.db.get_sheets()
-            dollar_sheets = [s for s in all_sheets if s.get('is_dollar_sheet', False)]
-
-            # 2. 그룹별로 시트 분류 (C# CtrlXls.cs 88-114행 로직)
-            d_xls = {}  # 그룹명 -> {FileInfoSht, CalListSht[]} 매핑
-
-            for sheet_info in dollar_sheets:
-                sheet_name = sheet_info['name']
-
-                # $(그룹명)시트명 패턴 파싱
-                if sheet_name.startswith("$(") and ")" in sheet_name:
-                    # $를 제거하고 파싱
-                    temp_name = sheet_name[1:]  # $ 제거
-                    temp_sht_name = temp_name.split(')')
-                    sht_naming = temp_sht_name[0].replace("(", "")  # 그룹명 (예: "InvCfg")
-                    sht_def_name = temp_sht_name[1]  # 시트명 (예: "_MV_RWD_PROJ", "FileInfo")
-
-                    # 그룹이 없으면 생성
-                    if sht_naming not in d_xls:
-                        d_xls[sht_naming] = {
-                            'FileInfoSht': None,
-                            'CalListSht': []
-                        }
-
-                    # FileInfo 시트인지 CalList 시트인지 구분
-                    if sht_def_name == "FileInfo":
-                        # FileInfo 시트 데이터 로드
-                        fileinfo_sheet_data = self.db.get_sheet_data(sheet_info['id'])
-                        fileinfo_sht_info = DataParser.prepare_sheet_for_existing_code(sheet_name, fileinfo_sheet_data)
-                        d_xls[sht_naming]['FileInfoSht'] = fileinfo_sht_info
-                    else:
-                        # CalList 시트 데이터 로드
-                        callist_sheet_data = self.db.get_sheet_data(sheet_info['id'])
-                        callist_sht_info = DataParser.prepare_sheet_for_existing_code(sheet_name, callist_sheet_data)
-                        d_xls[sht_naming]['CalListSht'].append(callist_sht_info)
-
-                elif sheet_name.startswith("$") and not sheet_name.startswith("$("):
-                    # 패턴 2: $시트타입 (그룹명 없음 - C# 레거시 호환)
-                    sheet_type = sheet_name[1:].strip()  # $ 제거 및 공백 제거
-                    group_name = "Default"  # C# 레거시와 동일한 기본 그룹명
-
-                    if group_name not in d_xls:
-                        d_xls[group_name] = {
-                            'FileInfoSht': None,
-                            'CalListSht': []
-                        }
-
-                    if sheet_type == "FileInfo":
-                        # FileInfo 시트 데이터 로드
-                        fileinfo_sheet_data = self.db.get_sheet_data(sheet_info['id'])
-                        fileinfo_sht_info = DataParser.prepare_sheet_for_existing_code(sheet_name, fileinfo_sheet_data)
-                        d_xls[group_name]['FileInfoSht'] = fileinfo_sht_info
-                    elif sheet_type in ["CalData", "CalList", "Caldata"] or sheet_type.startswith("_") or "UNDEFINED" in sheet_type:
-                        # CalData, CalList, Caldata, _로 시작하는 프로젝트 시트, UNDEFINED 시트 모두 CalList로 처리
-                        callist_sheet_data = self.db.get_sheet_data(sheet_info['id'])
-                        callist_sht_info = DataParser.prepare_sheet_for_existing_code(sheet_name, callist_sheet_data)
-                        d_xls[group_name]['CalListSht'].append(callist_sht_info)
-                    else:
-                        # 알 수 없는 타입도 CalList로 처리 (C# 레거시 호환성)
-                        callist_sheet_data = self.db.get_sheet_data(sheet_info['id'])
-                        callist_sht_info = DataParser.prepare_sheet_for_existing_code(sheet_name, callist_sheet_data)
-                        d_xls[group_name]['CalListSht'].append(callist_sht_info)
-
-            # 3. 각 그룹별로 코드 생성 (하나의 파일로)
-            for group_idx, (group_name, group_data) in enumerate(d_xls.items()):
-                logging.info(f"Processing group [{group_idx+1}/{len(d_xls)}]: '{group_name}' (silent mode)")
-
-                # 그룹 검증
-                if not group_data['FileInfoSht']:
-                    logging.error(f"No FileInfo sheet found for group '{group_name}'")
-                    continue
-
-                if not group_data['CalListSht']:
-                    logging.error(f"No CalList sheets found for group '{group_name}'")
-                    continue
-
-                # 글로벌 상태 초기화
-                Info.ErrList = []
-                Info.FileList = []
-                Info.MkFileNum = 0
-                Info.ErrNameSize = 0
-
-                # 임시 위젯 생성
-                lb_src = QListWidget()
-                lb_hdr = QListWidget()
-
-                # 그룹의 모든 시트를 포함하는 서로게이트 객체 생성
-                current_sheet_surrogate = OriginalFileSurrogate(self.db)
-                current_sheet_surrogate.FileInfoSht = group_data['FileInfoSht']
-                current_sheet_surrogate.CalListSht = group_data['CalListSht']
-
-                try:
-                    # 출력 리스트 초기화 (그룹별로 독립적인 코드 생성)
-                    lb_src.clear()
-                    lb_hdr.clear()
-
-                    # MakeCode 객체 생성
-                    make_code = MakeCode(current_sheet_surrogate, lb_src, lb_hdr)
-
-                    # 시트 정보 검증 (C# 버전과 동일한 순서)
-                    if make_code.ChkShtInfo():
-                        error_msgs = "\n".join(Info.ErrList) if Info.ErrList else "알 수 없는 검증 오류"
-                        logging.error(f"Sheet validation failed for group '{group_name}': {error_msgs}")
-                        Info.ErrList = []
-                        continue
-
-                    # 타겟 파일명 결정 (그룹명 기반)
-                    # FileInfo 시트에서 파일명 읽기 시도
-                    fileinfo_sht = group_data['FileInfoSht']
-                    base_name = group_name  # 기본값은 그룹명
-
-                    # FileInfo 시트에서 실제 파일명 읽기 (통일된 로직)
-                    if fileinfo_sht and fileinfo_sht.Data:
-                        # S_FILE 정보 읽기 (9행 3열 우선, 8행 2열 대체)
-                        s_file = Info.ReadCell(fileinfo_sht.Data, 9, 3)
-                        if s_file and s_file.endswith('.c'):
-                            base_name = s_file[:-2]  # .c 확장자 제거
-                            logging.info(f"그룹 '{group_name}' 파일명 읽기 (9행 3열): {s_file} → {base_name}")
-                        else:
-                            # 9행 3열에서 못 찾으면 8행 2열 시도
-                            s_file_alt = Info.ReadCell(fileinfo_sht.Data, 8, 2)
-                            if s_file_alt and s_file_alt.endswith('.c'):
-                                base_name = s_file_alt[:-2]
-                                logging.info(f"그룹 '{group_name}' 파일명 읽기 (8행 2열 대체): {s_file_alt} → {base_name}")
-                            else:
-                                logging.info(f"그룹 '{group_name}' 기본 파일명 사용: {base_name}")
-                    else:
-                        logging.info(f"그룹 '{group_name}' FileInfo 없음, 기본 파일명 사용: {base_name}")
-
-                    target_file_name = f"{base_name}.c"
-
-                    # 코드 읽기 및 변환
-                    make_code.ReadXlstoCode()
-                    make_code.ConvXlstoCode(source_file_name, target_file_name)
-
-                    # 변환 중 오류 확인
-                    if Info.ErrList:
-                         error_msgs = "\n".join(Info.ErrList)
-                         logging.error(f"Code conversion failed for group '{group_name}': {error_msgs}")
-                         Info.ErrList = []
-                         continue
-
-                    # 파일 이름 결정
-                    src_filename = f"{base_name}.c"
-                    hdr_filename = f"{base_name}.h"
-
-                    # 파일 저장 경로
-                    src_file_path = os.path.join(output_dir, src_filename)
-                    hdr_file_path = os.path.join(output_dir, hdr_filename)
-
-                    # 소스 파일 저장
-                    with open(src_file_path, 'w', encoding='utf-8') as f_src:
-                        for i in range(lb_src.count()):
-                            f_src.write(lb_src.item(i).text() + '\n')
-
-                    # 헤더 파일 저장
-                    with open(hdr_file_path, 'w', encoding='utf-8') as f_hdr:
-                        for i in range(lb_hdr.count()):
-                            f_hdr.write(lb_hdr.item(i).text() + '\n')
-
-                    logging.info(f"Code generated successfully for group '{group_name}': {src_filename}, {hdr_filename}")
-
-                except Exception as sheet_error:
-                    error_msg = f"그룹 '{group_name}' 처리 중 예외 발생: {str(sheet_error)}"
-                    logging.error(f"{error_msg}\n{traceback.format_exc()}")
-                finally:
-                    # MakeCode 객체 정리 (필요한 경우)
-                    if 'make_code' in locals() and hasattr(make_code, 'reset_for_new_file'):
-                        make_code.reset_for_new_file()
-                    # 임시 위젯 정리
-                    del lb_src
-                    del lb_hdr
-
-            logging.info(f"Silent code generation completed for DB: {os.path.basename(selected_db.db_file)}")
-
-        except Exception as e:
-            error_msg = f"Silent 코드 생성 과정 중 예기치 않은 오류 발생: {str(e)}"
-            logging.critical(f"{error_msg}\n{traceback.format_exc()}")
-            raise e
+        logging.info(f"Silent code generation completed for DB: {os.path.basename(selected_db.db_file)}")
+        return result_message
 
     def show_file_selection_dialog_for_db(self, db_handler: 'DBHandlerV2') -> Optional[int]:
         """특정 DB에 대한 파일 선택 대화상자 (V2 구조에서는 사용하지 않음)"""
@@ -4350,73 +3477,8 @@ class DBExcelEditor(QMainWindow):
         result_dialog.exec()
 
     def show_multiple_code_generation_result(self, successful_generations, failed_generations, output_dir):
-        """기존 다중 DB 코드 생성 결과 표시 (호환성 유지)"""
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QTextEdit, QPushButton, QHBoxLayout
-        from PySide6.QtGui import QFont
-
-        result_dialog = QDialog(self)
-        result_dialog.setWindowTitle("다중 DB 코드 생성 결과")
-        result_dialog.setMinimumSize(600, 500)
-
-        layout = QVBoxLayout(result_dialog)
-
-        # 결과 요약
-        summary_label = QLabel(f"총 {len(successful_generations + failed_generations)}개 DB 코드 생성 완료")
-        summary_label.setFont(QFont("", 10, QFont.Bold))
-        layout.addWidget(summary_label)
-
-        # 성공한 DB들
-        if successful_generations:
-            success_label = QLabel(f"성공: {len(successful_generations)}개")
-            success_label.setStyleSheet("color: green; font-weight: bold;")
-            layout.addWidget(success_label)
-
-            success_text = QTextEdit()
-            success_text.setMaximumHeight(200)
-            success_content = ""
-            for item in successful_generations:
-                success_content += f"• {item['db_name']} → {item['output_dir']}\n"
-                success_content += f"  결과: {item['result']}\n\n"
-            success_text.setPlainText(success_content)
-            success_text.setReadOnly(True)
-            layout.addWidget(success_text)
-
-        # 실패한 DB들
-        if failed_generations:
-            fail_label = QLabel(f"실패: {len(failed_generations)}개")
-            fail_label.setStyleSheet("color: red; font-weight: bold;")
-            layout.addWidget(fail_label)
-
-            fail_text = QTextEdit()
-            fail_text.setMaximumHeight(150)
-            fail_content = ""
-            for item in failed_generations:
-                fail_content += f"• {item['db_name']}: {item['error']}\n"
-            fail_text.setPlainText(fail_content)
-            fail_text.setReadOnly(True)
-            layout.addWidget(fail_text)
-
-        # 출력 디렉토리 열기 버튼
-        button_layout = QHBoxLayout()
-
-        open_dir_button = QPushButton("출력 디렉토리 열기")
-        open_dir_button.clicked.connect(lambda: os.startfile(output_dir))
-
-        ok_button = QPushButton("확인")
-        ok_button.clicked.connect(result_dialog.accept)
-
-        button_layout.addWidget(open_dir_button)
-        button_layout.addStretch()
-        button_layout.addWidget(ok_button)
-        layout.addLayout(button_layout)
-
-        # 상태바 업데이트
-        if failed_generations:
-            self.statusBar.showMessage(f"다중 DB 코드 생성 완료: 성공 {len(successful_generations)}개, 실패 {len(failed_generations)}개")
-        else:
-            self.statusBar.showMessage(f"다중 DB 코드 생성 완료: 모든 {len(successful_generations)}개 DB 성공")
-
-        result_dialog.exec()
+        """기존 호환성을 위한 래퍼 함수 - 개선된 함수로 리다이렉트"""
+        return self.show_multiple_code_generation_result_improved(successful_generations, failed_generations, output_dir)
 
     def show_code_generation_result(self, result_message: str, output_dir: str, generated_files_info: List[Dict[str, str]]):
         """
@@ -4858,7 +3920,7 @@ class DBExcelEditor(QMainWindow):
                     text=True,
                     encoding='utf-8',
                     errors='replace',
-                    timeout=10
+                    timeout=CodeGenerationConstants.GIT_COMMAND_TIMEOUT
                 )
                 if result.returncode == 0:
                     branch_name = result.stdout.strip()
