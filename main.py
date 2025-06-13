@@ -140,9 +140,9 @@ class CodeGenerationHelper:
     """코드 생성 관련 공통 로직을 담당하는 헬퍼 클래스"""
 
     @staticmethod
-    def classify_sheets_by_group(db_handler: 'DBHandlerV2') -> Dict[str, Dict[str, Any]]:
+    def classify_sheets_by_group_optimized(db_handler: 'DBHandlerV2') -> Dict[str, Dict[str, Any]]:
         """
-        시트들을 그룹별로 분류하는 공통 로직
+        시트들을 그룹별로 분류하는 최적화된 로직 - 데이터 미리 로딩
 
         Returns:
             Dict[str, Dict[str, Any]]: 그룹명 -> {FileInfoSht, CalListSht[]} 매핑
@@ -153,58 +153,97 @@ class CodeGenerationHelper:
         if not dollar_sheets:
             return {}
 
+        # 🚀 최적화: 모든 시트 데이터를 한 번에 로딩 (배치 처리)
+        logging.info(f"🚀 최적화된 시트 분류 시작: {len(dollar_sheets)}개 $ 시트 (배치 로딩)")
+
+        # 시트 데이터 캐시 (중복 로딩 방지)
+        sheet_data_cache = {}
+        for sheet_info in dollar_sheets:
+            sheet_id = sheet_info['id']
+            sheet_name = sheet_info['name']
+            try:
+                sheet_data_cache[sheet_id] = db_handler.get_sheet_data(sheet_id)
+                logging.debug(f"시트 데이터 캐시: {sheet_name}")
+            except Exception as e:
+                logging.error(f"시트 데이터 로딩 실패: {sheet_name} - {e}")
+                continue
+
         d_xls = {}
-        logging.info(f"시트 그룹별 분류 시작: {len(dollar_sheets)}개 $ 시트")
 
         for sheet_info in dollar_sheets:
             sheet_name = sheet_info['name']
-            logging.info(f"시트 분류 중: '{sheet_name}'")
+            sheet_id = sheet_info['id']
 
-            # 패턴 1: $(GroupName)SheetType
+            # 캐시에서 데이터 가져오기
+            if sheet_id not in sheet_data_cache:
+                continue
+
+            # 패턴 분석 (기존과 동일)
             if sheet_name.startswith("$(") and ")" in sheet_name:
-                temp_name = sheet_name[1:]  # $ 제거
+                temp_name = sheet_name[1:]
                 temp_sht_name = temp_name.split(')')
                 group_name = temp_sht_name[0].replace("(", "")
                 sheet_type = temp_sht_name[1] if len(temp_sht_name) > 1 else ""
 
-                logging.info(f"  → 그룹 패턴 - 그룹: '{group_name}', 타입: '{sheet_type}'")
-
                 if group_name not in d_xls:
                     d_xls[group_name] = {"FileInfoSht": None, "CalListSht": []}
 
-                CodeGenerationHelper._assign_sheet_to_group(
-                    d_xls[group_name], sheet_info, sheet_type, group_name, db_handler
+                CodeGenerationHelper._assign_sheet_to_group_cached(
+                    d_xls[group_name], sheet_info, sheet_type, group_name, sheet_data_cache[sheet_id]
                 )
 
-            # 패턴 2: $SheetType (그룹명 없음)
             elif sheet_name.startswith("$") and not sheet_name.startswith("$("):
-                sheet_type = sheet_name[1:].strip()  # $ 제거 및 공백 제거
+                sheet_type = sheet_name[1:].strip()
                 group_name = CodeGenerationConstants.DEFAULT_GROUP_NAME
 
-                logging.info(f"  → 단순 패턴 - 그룹: '{group_name}', 타입: '{sheet_type}'")
-
                 if group_name not in d_xls:
                     d_xls[group_name] = {"FileInfoSht": None, "CalListSht": []}
 
-                CodeGenerationHelper._assign_sheet_to_group(
-                    d_xls[group_name], sheet_info, sheet_type, group_name, db_handler
+                CodeGenerationHelper._assign_sheet_to_group_cached(
+                    d_xls[group_name], sheet_info, sheet_type, group_name, sheet_data_cache[sheet_id]
                 )
-            else:
-                logging.warning(f"  → 인식되지 않는 시트 패턴: '{sheet_name}'")
 
-        # 그룹별 분류 결과 로깅
-        logging.info(f"그룹별 분류 결과: {len(d_xls)}개 그룹")
-        for group_name, group_data in d_xls.items():
-            fileinfo_count = 1 if group_data["FileInfoSht"] else 0
-            callist_count = len(group_data["CalListSht"])
-            logging.info(f"  그룹 '{group_name}': FileInfo {fileinfo_count}개, CalList {callist_count}개")
-
+        logging.info(f"✅ 최적화된 분류 완료: {len(d_xls)}개 그룹")
         return d_xls
+
+    @staticmethod
+    def classify_sheets_by_group(db_handler: 'DBHandlerV2') -> Dict[str, Dict[str, Any]]:
+        """기존 호환성을 위한 래퍼 - 최적화된 버전 사용"""
+        return CodeGenerationHelper.classify_sheets_by_group_optimized(db_handler)
+
+    @staticmethod
+    def _assign_sheet_to_group_cached(group_data: Dict[str, Any], sheet_info: Dict[str, Any],
+                                     sheet_type: str, group_name: str, cached_sheet_data: List[List]):
+        """시트를 그룹에 할당하는 최적화된 메서드 - 캐시된 데이터 사용"""
+        if sheet_type == CodeGenerationConstants.FILEINFO_SHEET_TYPE:
+            # 캐시된 데이터로 FileInfo 시트 생성
+            fileinfo_sht_info = DataParser.prepare_sheet_for_existing_code(
+                sheet_info['name'], cached_sheet_data
+            )
+            group_data['FileInfoSht'] = fileinfo_sht_info
+            logging.debug(f"  → FileInfo 시트 등록 (캐시): 그룹 '{group_name}'")
+        elif (sheet_type in CodeGenerationConstants.CALLIST_SHEET_TYPES or
+              sheet_type.startswith(CodeGenerationConstants.PROJECT_SHEET_PREFIX) or
+              CodeGenerationConstants.UNDEFINED_SHEET_TYPE in sheet_type or
+              sheet_type == CodeGenerationConstants.END_SHEET_TYPE):
+            # 캐시된 데이터로 CalList 시트 생성
+            callist_sht_info = DataParser.prepare_sheet_for_existing_code(
+                sheet_info['name'], cached_sheet_data
+            )
+            group_data['CalListSht'].append(callist_sht_info)
+            logging.debug(f"  → CalList 시트 등록 (캐시): 그룹 '{group_name}' 타입 '{sheet_type}'")
+        else:
+            # 알 수 없는 타입도 CalList로 처리
+            callist_sht_info = DataParser.prepare_sheet_for_existing_code(
+                sheet_info['name'], cached_sheet_data
+            )
+            group_data['CalListSht'].append(callist_sht_info)
+            logging.debug(f"  → 알 수 없는 타입을 CalList로 등록 (캐시): 그룹 '{group_name}' 타입 '{sheet_type}'")
 
     @staticmethod
     def _assign_sheet_to_group(group_data: Dict[str, Any], sheet_info: Dict[str, Any],
                               sheet_type: str, group_name: str, db_handler: 'DBHandlerV2'):
-        """시트를 그룹에 할당하는 내부 메서드"""
+        """시트를 그룹에 할당하는 기존 메서드 (호환성 유지)"""
         if sheet_type == CodeGenerationConstants.FILEINFO_SHEET_TYPE:
             # FileInfo 시트 데이터 로드
             fileinfo_sheet_data = db_handler.get_sheet_data(sheet_info['id'])
@@ -3075,38 +3114,45 @@ class DBExcelEditor(QMainWindow):
             db_name = os.path.basename(db_handler.db_file)
             logging.info(f"=== 통합 코드 생성 시작: {db_name} ===")
 
-            # 진행률 콜백 함수 정의
-            def progress_callback(progress_val: int, message: str):
-                if progress_dialog:
+            # 🚀 최적화된 진행률 콜백 함수 (업데이트 빈도 제한)
+            last_progress_update = 0
+            def optimized_progress_callback(progress_val: int, message: str):
+                nonlocal last_progress_update
+                # 진행률이 5% 이상 변경되었을 때만 업데이트 (성능 최적화)
+                if progress_dialog and abs(progress_val - last_progress_update) >= 5:
                     progress_dialog.setValue(progress_val)
                     progress_dialog.setLabelText(message)
                     QApplication.processEvents()
+                    last_progress_update = progress_val
 
                     if progress_dialog.wasCanceled():
                         raise InterruptedError("사용자가 코드 생성을 취소했습니다.")
 
             if progress_dialog:
-                progress_callback(10, "시트 분류 중...")
+                optimized_progress_callback(10, "🚀 최적화된 시트 분류 중...")
 
-            # 1. 시트 그룹별 분류 (헬퍼 함수 사용)
-            d_xls = CodeGenerationHelper.classify_sheets_by_group(db_handler)
+            # 1. 시트 그룹별 분류 (최적화된 헬퍼 함수 사용)
+            d_xls = CodeGenerationHelper.classify_sheets_by_group_optimized(db_handler)
 
             if not d_xls:
                 return "코드 생성할 $ 시트가 없습니다.", []
 
             if progress_dialog:
-                progress_callback(30, f"코드 생성 시작... ({len(d_xls)}개 그룹)")
+                optimized_progress_callback(30, f"🚀 코드 생성 시작... ({len(d_xls)}개 그룹)")
 
-            # 2. 각 그룹별 코드 생성
-            result_message = f"코드 생성 결과 ({db_name}):\n\n"
+            # 2. 각 그룹별 코드 생성 (최적화된 처리)
+            result_message = f"🚀 최적화된 코드 생성 결과 ({db_name}):\n\n"
             generated_files_info = []
             has_errors = False
 
+            # 🚀 최적화: 전역 상태를 한 번만 초기화
+            CodeGenerationHelper.initialize_global_state()
+
             for group_idx, (group_name, group_data) in enumerate(d_xls.items()):
-                # 진행률 업데이트
+                # 🚀 최적화된 진행률 업데이트 (5% 단위로만)
                 if progress_dialog:
                     progress_val = 30 + int((group_idx / len(d_xls)) * 60)  # 30-90% 범위
-                    progress_callback(progress_val, f"'{group_name}' 그룹 처리 중 ({group_idx+1}/{len(d_xls)})")
+                    optimized_progress_callback(progress_val, f"⚡ '{group_name}' 그룹 처리 중 ({group_idx+1}/{len(d_xls)})")
 
                 # 그룹 검증
                 if not group_data['FileInfoSht'] or not group_data['CalListSht']:
@@ -3115,21 +3161,32 @@ class DBExcelEditor(QMainWindow):
                     continue
 
                 try:
-                    # 전역 상태 초기화
-                    CodeGenerationHelper.initialize_global_state()
-
-                    # 임시 위젯 생성
+                    # 🚀 최적화: 위젯을 재사용 (매번 생성하지 않음)
                     from PySide6.QtWidgets import QListWidget
-                    lb_src = QListWidget()
-                    lb_hdr = QListWidget()
+                    if 'lb_src' not in locals():
+                        lb_src = QListWidget()
+                        lb_hdr = QListWidget()
+                    else:
+                        # 기존 위젯 재사용 (클리어만)
+                        lb_src.clear()
+                        lb_hdr.clear()
 
-                    # 그룹별 서로게이트 객체 생성
-                    group_surrogate = OriginalFileSurrogate(db_handler)
+                    # 🚀 최적화: 서로게이트 객체 재사용
+                    if 'group_surrogate' not in locals():
+                        group_surrogate = OriginalFileSurrogate(db_handler)
+
+                    # 그룹별 데이터만 교체 (객체 재생성 안함)
                     group_surrogate.FileInfoSht = group_data['FileInfoSht']
                     group_surrogate.CalListSht = group_data['CalListSht']
 
-                    # MakeCode 객체 생성
-                    make_code = MakeCode(group_surrogate, lb_src, lb_hdr)
+                    # 🚀 최적화: MakeCode 객체 재사용
+                    if 'make_code' not in locals():
+                        make_code = MakeCode(group_surrogate, lb_src, lb_hdr)
+                    else:
+                        # 기존 객체 재사용 (데이터만 교체)
+                        make_code.original_file = group_surrogate
+                        make_code.lb_src = lb_src
+                        make_code.lb_hdr = lb_hdr
 
                     # 시트 정보 검증
                     if make_code.ChkShtInfo():
