@@ -1522,6 +1522,17 @@ class CalList:
             self.mkMode == EMkMode.TITLE_H):
             self.setPragmaSection(key_str, row)
 
+        # 🔥 핵심 수정: currentTitle이 비어있거나 dTempCode에 키가 없는 경우 처리
+        if not self.currentTitle:
+            # 기본 타이틀 생성 (첫 번째 데이터인 경우)
+            self.currentTitle = "TITLE+DEFAULT"
+            logging.warning(f"시트 {self.ShtName}: currentTitle이 비어있어 기본값 설정")
+
+        # dTempCode에 키가 없는 경우 생성
+        if self.currentTitle not in self.dTempCode:
+            self.dTempCode[self.currentTitle] = []
+            logging.info(f"시트 {self.ShtName}: dTempCode에 새 키 생성 - {self.currentTitle}")
+
         self.dTempCode[self.currentTitle].append([op_code_str, key_str, type_str, name_str, val_str, desc_str])
 
         # alignment 정보 저장
@@ -1550,6 +1561,17 @@ class CalList:
         """코드생성 아이템 임시 저장"""
         empty_src = False
         empty_hdr = False
+
+        # 🔥 핵심 수정: currentTitle 검증 및 초기화
+        if not self.currentTitle:
+            self.currentTitle = "TITLE+DEFAULT"
+            logging.warning(f"시트 {self.ShtName}: writeCalList에서 currentTitle이 비어있어 기본값 설정")
+
+        # dSrcCode, dHdrCode에 키가 없는 경우 생성
+        if self.currentTitle not in self.dSrcCode:
+            self.dSrcCode[self.currentTitle] = []
+        if self.currentTitle not in self.dHdrCode:
+            self.dHdrCode[self.currentTitle] = []
 
         if self.currentTitle in self.dSrcCode:
             empty_src = Info.ExistEmptyStr(self.dSrcCode[self.currentTitle], 1)
@@ -2118,6 +2140,17 @@ class CalList:
 
     def writeCode(self, mk_mode, code_str, src):
         """코드 작성"""
+        # 🔥 핵심 수정: currentTitle 검증 및 초기화
+        if not self.currentTitle:
+            self.currentTitle = "TITLE+DEFAULT"
+            logging.warning(f"시트 {self.ShtName}: writeCode에서 currentTitle이 비어있어 기본값 설정")
+
+        # dSrcCode, dHdrCode에 키가 없는 경우 생성
+        if self.currentTitle not in self.dSrcCode:
+            self.dSrcCode[self.currentTitle] = []
+        if self.currentTitle not in self.dHdrCode:
+            self.dHdrCode[self.currentTitle] = []
+
         if mk_mode == EMkMode.PRJT_DEF:
             self.frontTab = ""
             for i in range(self.prjtDepth, 0, -1):
