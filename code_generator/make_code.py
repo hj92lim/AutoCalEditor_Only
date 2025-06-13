@@ -523,13 +523,18 @@ class MakeCode:
 
             # Cython 최적화 버전으로 대량 처리 (Float Suffix 안전 모드)
             if USE_CYTHON_CODE_GEN and all_temp_code_items:
-                try:
-                    # Float Suffix 비활성화 모드로 안전하게 처리
-                    processed_items = fast_write_cal_list_processing(all_temp_code_items)
-                    logging.info(f"✓ Cython 최적화로 {len(processed_items)}개 코드 항목 처리 완료")
-                except Exception as e:
-                    logging.warning(f"Cython 최적화 실패, Python 폴백 사용: {e}")
-                    # Python 폴백으로 계속 진행
+                # 안전한 동적 import로 Cython 함수 가져오기
+                fast_write_cal_list_processing = safe_import_cython_function('code_generator_v2', 'fast_write_cal_list_processing')
+                if fast_write_cal_list_processing:
+                    try:
+                        # Float Suffix 안전 모드로 처리
+                        processed_items = fast_write_cal_list_processing(all_temp_code_items)
+                        logging.info(f"✓ Cython 최적화로 {len(processed_items)}개 코드 항목 처리 완료")
+                    except Exception as e:
+                        logging.warning(f"Cython 최적화 실패, Python 폴백 사용: {e}")
+                        # Python 폴백으로 계속 진행
+                else:
+                    logging.warning("Cython 함수 import 실패, Python 폴백 사용")
 
         # 기존 Python 버전 (상세 처리)
         # 사전 처리 - 각 타이틀에 대한 정보 미리 수집

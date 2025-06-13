@@ -179,11 +179,36 @@ class CalList:
 
     def bulk_cache_cells(self, row_start: int, row_end: int, col_start: int, col_end: int):
         """
-        🚀 성능 최적화: 대량 셀 데이터 미리 캐싱
+        🚀 성능 최적화: 대량 셀 데이터 미리 캐싱 (DB 배치 읽기 활용)
         필요한 영역의 셀들을 한 번에 캐시에 로드하여 개별 읽기 오버헤드 제거
         """
         cached_count = 0
 
+        # 🚀 DB 배치 읽기 시도 (새로 구현한 최적화 함수 활용)
+        try:
+            if hasattr(self.fi, 'of') and hasattr(self.fi.of, 'db_handler'):
+                db_handler = self.fi.of.db_handler
+                sheet_id = getattr(self, 'sheet_id', None)
+
+                if db_handler and sheet_id and hasattr(db_handler, 'get_batch_rows'):
+                    # 🚀 벡터화된 DB 배치 읽기 사용
+                    batch_data = db_handler.get_batch_rows(sheet_id, row_start, min(row_end, len(self.shtData)))
+
+                    for row_num, row_data in batch_data.items():
+                        for col_num, value in row_data.items():
+                            if col_start <= col_num <= col_end:
+                                cache_key = (row_num << 16) | col_num
+                                if cache_key not in self.cell_cache:
+                                    self.cell_cache[cache_key] = str(value) if value is not None else ""
+                                    cached_count += 1
+
+                    if cached_count > 0:
+                        logging.debug(f"🚀 DB 배치 캐싱 완료: {cached_count}개 셀 캐시됨")
+                        return
+        except Exception as e:
+            logging.debug(f"DB 배치 읽기 실패, 메모리 캐싱으로 폴백: {e}")
+
+        # 폴백: 기존 메모리 기반 캐싱
         for row in range(row_start, min(row_end, len(self.shtData))):
             if row >= len(self.shtData):
                 break
@@ -197,7 +222,7 @@ class CalList:
                     cached_count += 1
 
         if cached_count > 0:
-            logging.debug(f"대량 캐싱 완료: {cached_count}개 셀 캐시됨")
+            logging.debug(f"메모리 캐싱 완료: {cached_count}개 셀 캐시됨")
 
     def clear_cache_if_needed(self):
         """
