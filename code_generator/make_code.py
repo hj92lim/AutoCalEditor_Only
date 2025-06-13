@@ -47,7 +47,7 @@ class MakeCode:
     # 클래스 상수 정의 (매직 넘버 제거)
     MEMORY_LIMIT_MB = 2048  # 2GB 메모리 제한
     TIMEOUT_SECONDS = PerformanceConstants.CODE_GENERATION_TIMEOUT  # 타임아웃 (10분)
-    PROGRESS_WEIGHT_READ = 50  # ReadXlstoCode가 전체 진행률에서 차지하는 비중
+    PROGRESS_WEIGHT_READ = 50  # ReadDBtoTempCode가 전체 진행률에서 차지하는 비중
 
     def __init__(self, of, lb_src, lb_hdr):
         self.of = of
@@ -274,16 +274,7 @@ class MakeCode:
             self.MEMORY_LIMIT_MB
         )
 
-    # 하위 호환성을 위한 래퍼 함수들 (기존 코드와의 호환성 유지)
-    def ReadXlstoCode(self, progress_callback=None):
-        """하위 호환성을 위한 래퍼 함수 - ReadDBtoTempCode 호출"""
-        logging.warning("ReadXlstoCode는 deprecated입니다. ReadDBtoTempCode를 사용하세요.")
-        return self.ReadDBtoTempCode(progress_callback)
 
-    def ConvXlstoCode(self, source_file_name="", target_file_name="", progress_callback=None):
-        """하위 호환성을 위한 래퍼 함수 - ConvTempCodetoC 호출"""
-        logging.warning("ConvXlstoCode는 deprecated입니다. ConvTempCodetoC를 사용하세요.")
-        return self.ConvTempCodetoC(source_file_name, target_file_name, progress_callback)
 
     def _format_error_messages(self) -> List[str]:
         """오류 메시지 포맷팅 - 단일 책임 원칙"""
@@ -530,10 +521,15 @@ class MakeCode:
                     if title_name in self.cl[sht].dTempCode:
                         all_temp_code_items.extend(self.cl[sht].dTempCode[title_name])
 
-            # Cython 최적화 버전으로 대량 처리 (임시 비활성화 - Float Suffix 오류 회피)
-            if False and all_temp_code_items:  # 임시로 비활성화
-                processed_items = fast_write_cal_list_processing(all_temp_code_items)
-                logging.info(f"✓ Cython 최적화로 {len(processed_items)}개 코드 항목 처리 완료")
+            # Cython 최적화 버전으로 대량 처리 (Float Suffix 안전 모드)
+            if USE_CYTHON_CODE_GEN and all_temp_code_items:
+                try:
+                    # Float Suffix 비활성화 모드로 안전하게 처리
+                    processed_items = fast_write_cal_list_processing(all_temp_code_items)
+                    logging.info(f"✓ Cython 최적화로 {len(processed_items)}개 코드 항목 처리 완료")
+                except Exception as e:
+                    logging.warning(f"Cython 최적화 실패, Python 폴백 사용: {e}")
+                    # Python 폴백으로 계속 진행
 
         # 기존 Python 버전 (상세 처리)
         # 사전 처리 - 각 타이틀에 대한 정보 미리 수집

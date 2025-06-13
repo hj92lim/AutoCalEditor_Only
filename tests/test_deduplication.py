@@ -109,16 +109,7 @@ class TestDeduplicationEffects(unittest.TestCase):
         # 성능 확인 (100개 아이템 처리가 1초 이내)
         self.assertLess(elapsed_time, 1.0, "배치 처리가 효율적이어야 합니다")
     
-    @patch('code_generator.make_code.logging')
-    def test_function_name_deprecation_warning(self, mock_logging):
-        """함수명 변경에 따른 deprecation 경고 테스트"""
-        # 기존 함수 호출 시 경고 메시지 확인
-        self.make_code.ReadXlstoCode()
-        
-        # deprecation 경고가 로그에 기록되었는지 확인
-        mock_logging.warning.assert_called_with(
-            "ReadXlstoCode는 deprecated입니다. ReadDBtoTempCode를 사용하세요."
-        )
+
     
     def test_memory_usage_optimization(self):
         """메모리 사용량 최적화 테스트"""

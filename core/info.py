@@ -116,7 +116,7 @@ class Info:
     PrjtNameCol = LegacyConstants.PrjtNameCol
     TabSize = LegacyConstants.TabSize
 
-    ReadingXlsRule = LegacyConstants.ReadingXlsRule
+    ReadingDBRule = LegacyConstants.ReadingDBRule
     FileInfoShtName = LegacyConstants.FileInfoShtName
     CommPrjtName = LegacyConstants.CommPrjtName
     ElsePrjtName = LegacyConstants.ElsePrjtName
@@ -219,7 +219,7 @@ class Info:
             
             err_cell_str = chr(temp + 64) + err_cell_str
         
-        err_cell_str = f"{Info.ReadingXlsRule}{sht_name}[{err_cell_str}{row}]:"
+        err_cell_str = f"{Info.ReadingDBRule}{sht_name}[{err_cell_str}{row}]:"
         
         if len(err_cell_str.encode('utf-8')) > Info.ErrNameSize:
             Info.ErrNameSize = len(err_cell_str.encode('utf-8'))

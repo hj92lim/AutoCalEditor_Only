@@ -257,7 +257,7 @@ class LegacyConstants:
     """기존 코드와의 호환성을 위한 상수들"""
     
     # Info 클래스에서 이전된 상수들
-    ReadingXlsRule = ExcelConstants.DOLLAR_SHEET_MARKER
+    ReadingDBRule = ExcelConstants.DOLLAR_SHEET_MARKER
     FileInfoShtName = CodeGenerationConstants.FILEINFO_SHEET_TYPE
     CommPrjtName = CodeGenerationConstants.COMMON_PROJECT_NAME
     ElsePrjtName = CodeGenerationConstants.DEFAULT_PROJECT_NAME

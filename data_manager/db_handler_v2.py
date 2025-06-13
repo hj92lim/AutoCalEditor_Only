@@ -642,6 +642,43 @@ class DBHandlerV2:
             logging.error(f"행 데이터 조회 오류 (sheet_id={sheet_id}, row={row}): {e}")
             return {}
 
+    def get_batch_rows(self, sheet_id: int, start_row: int, end_row: int) -> Dict[int, Dict[int, str]]:
+        """
+        🚀 성능 최적화: 여러 행의 데이터를 한 번에 가져오기 (벡터화)
+
+        Args:
+            sheet_id: 시트 ID
+            start_row: 시작 행 번호
+            end_row: 끝 행 번호 (포함)
+
+        Returns:
+            {행 번호: {열 번호: 값}} 형태의 중첩 딕셔너리
+        """
+        try:
+            # 배치로 여러 행 데이터 한 번에 조회 (단일 쿼리로 성능 향상)
+            self.cursor.execute(
+                "SELECT row, col, value FROM cells WHERE sheet_id = ? AND row BETWEEN ? AND ? ORDER BY row, col",
+                (sheet_id, start_row, end_row)
+            )
+
+            # 결과를 중첩 딕셔너리로 구성
+            batch_data = {}
+            for cell in self.cursor.fetchall():
+                row_num = cell['row']
+                col_num = cell['col']
+                value = cell['value']
+
+                if row_num not in batch_data:
+                    batch_data[row_num] = {}
+                batch_data[row_num][col_num] = value
+
+            logging.debug(f"배치 읽기 완료: 시트 {sheet_id}, 행 {start_row}-{end_row}, {len(batch_data)}개 행")
+            return batch_data
+
+        except Exception as e:
+            logging.error(f"배치 행 데이터 조회 오류 (sheet_id={sheet_id}, rows={start_row}-{end_row}): {e}")
+            return {}
+
     def delete_rows_range(self, sheet_id: int, start_row: int, count: int) -> None:
         """
         지정된 범위의 행들을 삭제

@@ -321,6 +321,16 @@ class CalList:
 
             logging.info(f"시트 {self.ShtName}: 최적화된 배치 크기 {batch_size}로 {total_rows}행 처리 시작")
 
+            # 🚀 벡터화 최적화: 필요한 영역의 셀들을 미리 대량 캐싱
+            max_col = max([item.Col for item in self.dItem.values()]) + 5  # 여유분 추가
+            self.bulk_cache_cells(
+                self.itemStartPos.Row,
+                len(self.shtData),
+                0,
+                max_col
+            )
+            logging.info(f"시트 {self.ShtName}: 벡터화 캐싱 완료 ({total_rows}행 × {max_col}열)")
+
             # 성능 최적화: 딕셔너리 순회를 한 번만 수행하고 리스트로 저장
             item_list = list(self.dItem.values())
 
@@ -395,7 +405,7 @@ class CalList:
                 lambda item_data: self._write_single_code_item(item_data),
                 f"시트 {self.ShtName} 코드 생성",
                 progress_callback,
-                100  # 100개씩 배치 처리
+                1000  # 1000개씩 배치 처리 (10배 증가로 성능 향상)
             )
 
         return self.pipeline.execute_with_monitoring(
@@ -674,7 +684,7 @@ class CalList:
                     row,
                     self.dArr[self.currentArr].StartPos.Col,
                     self.dArr[self.currentArr].EndPos.Col,
-                    Info.ReadingXlsRule
+                    Info.ReadingDBRule
                 )
 
                 # Alignment 크기 업데이트
@@ -701,7 +711,7 @@ class CalList:
             cell_str = Info.ReadCell(self.shtData, row, col)
 
             # 주석 위치인지 확인
-            is_annotation = (cell_str == Info.ReadingXlsRule)
+            is_annotation = (cell_str == Info.ReadingDBRule)
 
             # 주석 행/열 확인 (AnnotateRow, AnnotateCol 활용)
             is_in_annotation_col = col - self.dArr[self.currentArr].StartPos.Col in self.dArr[self.currentArr].AnnotateCol
@@ -721,7 +731,7 @@ class CalList:
                     if not cell_str:
                         cell_str = "Idx"
 
-                if cell_str == Info.ReadingXlsRule:
+                if cell_str == Info.ReadingDBRule:
                     if row == self.dArr[self.currentArr].StartPos.Row:  # Column에 주석 생성
                         col_idx = col - self.dArr[self.currentArr].StartPos.Col
                         if col_idx not in self.dArr[self.currentArr].AnnotateCol:
@@ -743,7 +753,7 @@ class CalList:
                 if col - self.dArr[self.currentArr].StartPos.Col >= len(self.dArr[self.currentArr].AlignmentSize):
                     self.dArr[self.currentArr].AlignmentSize.append(0)
 
-            cell_str = cell_str.replace(Info.ReadingXlsRule, "")
+            cell_str = cell_str.replace(Info.ReadingDBRule, "")
 
             # 열 위치 계산
             temp_col_pos = col - self.dArr[self.currentArr].StartPos.Col
