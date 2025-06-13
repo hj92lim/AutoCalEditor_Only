@@ -2965,10 +2965,10 @@ class DBExcelEditor(QMainWindow):
                     has_errors = True
                     continue
 
-                result_message += f"✅ FileInfo: {group_data['FileInfoSht']['name']}\n"
+                result_message += f"✅ FileInfo: {group_data['FileInfoSht'].Name}\n"
                 result_message += f"✅ CalList 시트 수: {len(group_data['CalListSht'])}\n"
                 for cal_sheet in group_data['CalListSht']:
-                    result_message += f"   - {cal_sheet['name']}\n"
+                    result_message += f"   - {cal_sheet.Name}\n"
 
                 # 글로벌 상태 초기화
                 Info.ErrList = []
@@ -2984,38 +2984,26 @@ class DBExcelEditor(QMainWindow):
                 # 그룹의 모든 시트를 포함하는 서로게이트 객체 생성
                 current_sheet_surrogate = OriginalFileSurrogate(self.db)
 
-                # FileInfo 시트 데이터 로드
+                # FileInfo 시트 데이터 로드 (SShtInfo 객체 사용)
                 if group_data['FileInfoSht']:
                     fileinfo_sheet = group_data['FileInfoSht']
-                    fileinfo_data = self.db.get_sheet_data(fileinfo_sheet['id'])
-                    if fileinfo_data:
-                        # 시트 정보 객체 생성 (실제 데이터 포함)
-                        fileinfo_obj = type('SheetInfo', (), {
-                            'Name': fileinfo_sheet['name'],
-                            'Data': fileinfo_data,
-                            'id': fileinfo_sheet['id']
-                        })()
-                        current_sheet_surrogate.FileInfoSht = fileinfo_obj
-                        logging.info(f"✅ FileInfo 시트 데이터 로드 완료: {fileinfo_sheet['name']} ({len(fileinfo_data)}행)")
+                    # SShtInfo 객체에서 이미 데이터가 로드되어 있는지 확인
+                    if hasattr(fileinfo_sheet, 'Data') and fileinfo_sheet.Data:
+                        current_sheet_surrogate.FileInfoSht = fileinfo_sheet
+                        logging.info(f"✅ FileInfo 시트 데이터 이미 로드됨: {fileinfo_sheet.Name} ({len(fileinfo_sheet.Data)}행)")
                     else:
-                        logging.error(f"❌ FileInfo 시트 데이터 로드 실패: {fileinfo_sheet['name']}")
+                        logging.error(f"❌ FileInfo 시트 데이터 없음: {fileinfo_sheet.Name}")
                         continue
 
-                # CalList 시트들 데이터 로드
+                # CalList 시트들 데이터 로드 (SShtInfo 객체 사용)
                 callist_objects = []
                 for callist_sheet in group_data['CalListSht']:
-                    callist_data = self.db.get_sheet_data(callist_sheet['id'])
-                    if callist_data:
-                        # 시트 정보 객체 생성 (실제 데이터 포함)
-                        callist_obj = type('SheetInfo', (), {
-                            'Name': callist_sheet['name'],
-                            'Data': callist_data,
-                            'id': callist_sheet['id']
-                        })()
-                        callist_objects.append(callist_obj)
-                        logging.info(f"✅ CalList 시트 데이터 로드 완료: {callist_sheet['name']} ({len(callist_data)}행)")
+                    # SShtInfo 객체에서 이미 데이터가 로드되어 있는지 확인
+                    if hasattr(callist_sheet, 'Data') and callist_sheet.Data:
+                        callist_objects.append(callist_sheet)
+                        logging.info(f"✅ CalList 시트 데이터 이미 로드됨: {callist_sheet.Name} ({len(callist_sheet.Data)}행)")
                     else:
-                        logging.error(f"❌ CalList 시트 데이터 로드 실패: {callist_sheet['name']}")
+                        logging.error(f"❌ CalList 시트 데이터 없음: {callist_sheet.Name}")
 
                 current_sheet_surrogate.CalListSht = callist_objects
 
