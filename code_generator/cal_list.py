@@ -2280,11 +2280,12 @@ class CalList:
 
         # cal_list.py에 추가
     def safe_read_cell(self, row, col):
-        """셀 데이터 안전하게 읽기"""
+        """셀 데이터 안전하게 읽기 - 최적화된 버전 사용"""
         try:
             if self.shtData and 0 <= row < len(self.shtData):
                 if 0 <= col < len(self.shtData[row]):
-                    return Info.ReadCell(self.shtData, row, col)
+                    # 🚀 최적화: Info.ReadCell 대신 _fast_read_cell 사용
+                    return self._fast_read_cell(row, col)
                 else:
                     logging.warning(f"열 인덱스 범위 초과: row={row}, col={col}, max_col={len(self.shtData[row])-1}")
             else:
