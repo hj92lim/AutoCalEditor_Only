@@ -793,10 +793,13 @@ class CalList:
             # 첫 번째 열 확인 (행 인덱스 열)
             is_first_col = (col == self.dArr[self.currentArr].StartPos.Col)
 
-            # 빈 셀 처리
+            # 🔥 빈 셀 관대한 처리: 배열 멤버에서 빈 셀 허용 (경고만 로그)
             if not cell_str:
+                # 배열 데이터 영역의 빈 셀은 허용 (기본값 "0" 설정)
                 if col != self.dArr[self.currentArr].StartPos.Col and col != self.dArr[self.currentArr].EndPos.Col and row != self.dArr[self.currentArr].StartPos.Row:
-                    Info.WriteErrCell(EErrType.EmptyCell, self.ShtName, row, col)
+                    logging.debug(f"빈 배열 셀 발견 (허용됨): 시트 {self.ShtName}, 행 {row}, 열 {col}")
+                    cell_str = "0"  # 기본값 설정
+                    # Info.WriteErrCell(EErrType.EmptyCell, self.ShtName, row, col)  # 주석 처리
 
             if self.dArr[self.currentArr].ArrType != EArrType.Type3.value:
                 if row == self.dArr[self.currentArr].StartPos.Row and col == self.dArr[self.currentArr].StartPos.Col:
