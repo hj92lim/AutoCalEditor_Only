@@ -2946,10 +2946,15 @@ class DBExcelEditor(QMainWindow):
 
             # 3. 각 그룹별로 코드 생성 (하나의 파일로)
             for group_idx, (group_name, group_data) in enumerate(d_xls.items()):
-                # 진행률 업데이트 (코드 생성 단계)
-                progress_val = 50 + int((group_idx / len(d_xls)) * 45)  # 50-95% 범위
+                # 진행률 업데이트 (코드 생성 단계) - 수정된 범위
+                progress_val = 50 + int((group_idx / len(d_xls)) * 35)  # 50-85% 범위
                 progress.setValue(progress_val)
-                progress.setLabelText(f"'{group_name}' 그룹 C코드 생성 중 ({group_idx+1}/{len(d_xls)})")
+
+                # 🔥 메시지 개선: 단일 그룹일 때는 그룹 번호 생략
+                if len(d_xls) == 1:
+                    progress.setLabelText(f"'{group_name}' C코드 생성 중")
+                else:
+                    progress.setLabelText(f"'{group_name}' 그룹 C코드 생성 중 ({group_idx+1}/{len(d_xls)})")
                 QApplication.processEvents()
 
                 # 취소 확인
@@ -3030,18 +3035,25 @@ class DBExcelEditor(QMainWindow):
                     # MakeCode 객체 생성
                     make_code = MakeCode(current_sheet_surrogate, lb_src, lb_hdr)
 
-                    # 진행률 콜백 함수 정의 (더 상세한 피드백)
+                    # 진행률 콜백 함수 정의 (수정된 버전)
                     def detailed_progress_callback(progress_val, message):
                         if progress.wasCanceled():
                             raise InterruptedError("사용자가 코드 생성을 취소했습니다.")
 
-                        # 전체 진행률 계산 (그룹별 진행률 반영) - 더 세밀하게
-                        group_base_progress = 50 + int((group_idx / len(d_xls)) * 40)  # 50-90% 범위
-                        group_detail_progress = int(progress_val * 0.4 / 100)  # 각 그룹 내 세부 진행률
-                        total_progress = min(90, group_base_progress + group_detail_progress)
+                        # 🔥 수정된 진행률 계산 (더 정확하고 부드럽게)
+                        # 그룹별 기본 진행률 (50-85% 범위)
+                        group_base_progress = 50 + int((group_idx / len(d_xls)) * 35)
+                        # 그룹 내 세부 진행률 (0-15% 범위) - 더 큰 범위로 수정
+                        group_detail_progress = int(progress_val * 15 / 100)
+                        total_progress = min(85, group_base_progress + group_detail_progress)
 
                         progress.setValue(total_progress)
-                        progress.setLabelText(f"[{group_idx+1}/{len(d_xls)}] {group_name}: {message}")
+
+                        # 🔥 메시지 개선: 단일 그룹일 때는 그룹 번호 생략
+                        if len(d_xls) == 1:
+                            progress.setLabelText(f"{group_name}: {message}")
+                        else:
+                            progress.setLabelText(f"[{group_idx+1}/{len(d_xls)}] {group_name}: {message}")
                         QApplication.processEvents()
 
                     # 시트 정보 검증 (C# 버전과 동일한 순서)
@@ -3123,7 +3135,7 @@ class DBExcelEditor(QMainWindow):
                     del lb_hdr
 
             # 6. 최종 결과 표시 - 더 상세한 완료 메시지
-            progress.setValue(95)
+            progress.setValue(90)
             progress.setLabelText("결과 정리 중...")
             QApplication.processEvents()
 
