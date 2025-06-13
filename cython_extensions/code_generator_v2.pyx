@@ -13,30 +13,61 @@ from libc.stdlib cimport malloc, free
 
 @boundscheck(False)
 @wraparound(False)
-def fast_read_cal_list_processing(list sht_data, int start_row, int end_row, list item_list):
+def fast_read_cal_list_processing(object cal_list_obj, int start_row, int end_row, list item_list):
     """
-    ReadCalList의 핵심 반복문 최적화
+    ReadCalList의 핵심 반복문 최적화 - 완전한 데이터 처리 버전
     cal_list.py의 ReadCalList 메서드 최적화
     """
     cdef int row, i, item_count
     cdef object item
     cdef list processed_rows = []
-    
-    if not sht_data or not item_list:
+    cdef object sht_data
+    cdef bint process_success = False
+
+    if not cal_list_obj or not item_list:
         return processed_rows
-    
+
+    sht_data = cal_list_obj.shtData
+    if not sht_data:
+        return processed_rows
+
     item_count = len(item_list)
-    
+
     for row in range(start_row, min(end_row, len(sht_data))):
-        # 아이템 행 설정 최적화
-        for i in range(item_count):
-            item = item_list[i]
-            if item is not None:
-                item.Row = row
-        
-        processed_rows.append(row)
-    
-    return processed_rows
+        try:
+            # 🔥 핵심 수정: 실제 데이터 처리 로직 추가
+
+            # 1. 아이템 행 설정
+            for i in range(item_count):
+                item = item_list[i]
+                if item is not None:
+                    item.Row = row
+
+            # 2. 실제 데이터 처리 (Python 메서드 호출)
+            # chk_op_code 호출
+            if hasattr(cal_list_obj, 'chk_op_code'):
+                cal_list_obj.chk_op_code()
+
+            # readRow 또는 readArrMem 호출
+            if hasattr(cal_list_obj, 'readRow'):
+                cal_list_obj.readRow(row)
+
+            # chkCalList 호출
+            if hasattr(cal_list_obj, 'chkCalList'):
+                cal_list_obj.chkCalList()
+
+            # 3. 핵심: saveTempList 호출 (데이터를 dTempCode에 저장)
+            if hasattr(cal_list_obj, 'saveTempList'):
+                cal_list_obj.saveTempList()
+                process_success = True
+
+            processed_rows.append(row)
+
+        except Exception as e:
+            # 오류 발생 시 해당 행 건너뛰기
+            continue
+
+    return processed_rows if process_success else []
 
 
 @boundscheck(False)

@@ -318,18 +318,15 @@ class CalList:
                 # 병렬 처리 여부 결정 (중간 크기 이상 배치에서만)
                 use_parallel_for_batch = (batch_end - batch_start) >= 500 and total_rows > 2000
 
-                # 🚨 긴급 수정: Cython 함수가 실제 데이터 처리를 하지 않으므로 비활성화
-                # Cython fast_read_cal_list_processing은 행 번호만 설정하고 실제 데이터 처리(saveTempList 등)를 하지 않음
-                # 따라서 실제 데이터가 dTempCode에 저장되지 않아 빈 코드가 생성됨
-                if False:  # use_cython - 임시 비활성화
+                if use_cython:
                     try:
-                        # 🔥 Cython 초고속 처리 (현재 불완전하므로 비활성화)
+                        # 🔥 Cython 완전한 데이터 처리 (수정된 버전)
                         cython_result = fast_read_cal_list_processing(
-                            self.shtData, batch_start, batch_end, item_list
+                            self, batch_start, batch_end, item_list  # self 객체 전달로 완전한 처리
                         )
                         if cython_result:
-                            processed_rows += (batch_end - batch_start)
-                            logging.debug(f"✅ Cython 처리 성공: {batch_start}-{batch_end}")
+                            processed_rows += len(cython_result)
+                            logging.debug(f"✅ Cython 완전 처리 성공: {batch_start}-{batch_end} ({len(cython_result)}행)")
                             continue  # 다음 배치로
                         else:
                             logging.debug(f"⚠️ Cython 결과 없음, 표준 처리 모드로 전환")
