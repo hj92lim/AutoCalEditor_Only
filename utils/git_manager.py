@@ -15,6 +15,9 @@ from datetime import datetime
 from typing import Dict, List
 from pathlib import Path
 
+# 중앙 집중식 상수 관리 모듈 import
+from core.constants import GitConstants, DatabaseConstants
+
 
 class GitManager:
     """Git 연동 관리 클래스"""
@@ -24,8 +27,8 @@ class GitManager:
         GitManager 초기화 (로컬 Git 전용)
         """
         self.project_root = Path.cwd()
-        self.backup_dir = self.project_root / "backups"
-        self.history_dir = self.project_root / "history"
+        self.backup_dir = self.project_root / DatabaseConstants.BACKUP_DIR
+        self.history_dir = self.project_root / DatabaseConstants.HISTORY_DIR
 
         # Git 실행 파일 경로 찾기
         self.git_executable = self._find_git_executable()
@@ -51,14 +54,9 @@ class GitManager:
         """Git 실행 파일 경로 찾기"""
         import platform
 
-        # Windows에서 일반적인 Git 설치 경로들
+        # Windows에서 일반적인 Git 설치 경로들 (constants에서 관리)
         if platform.system() == "Windows":
-            possible_paths = [
-                r"C:\Program Files\Git\bin\git.exe",
-                r"C:\Program Files\Git\mingw64\bin\git.exe",
-                r"C:\Program Files (x86)\Git\bin\git.exe",
-                r"C:\Program Files (x86)\Git\mingw64\bin\git.exe",
-            ]
+            possible_paths = GitConstants.WINDOWS_GIT_PATHS
 
             # 설치된 경로 확인
             for path in possible_paths:
@@ -111,13 +109,12 @@ class GitManager:
 
             remote_branches = result.stdout.strip().split('\n')
 
-            # 브랜치 우선순위: main > master > 첫 번째 브랜치
-            for branch in remote_branches:
-                branch = branch.strip()
-                if 'origin/main' in branch:
-                    return 'main'
-                elif 'origin/master' in branch:
-                    return 'master'
+            # 브랜치 우선순위 (constants에서 관리)
+            for priority_branch in GitConstants.DEFAULT_BRANCH_PRIORITY:
+                for branch in remote_branches:
+                    branch = branch.strip()
+                    if f'origin/{priority_branch}' in branch:
+                        return priority_branch
 
             # main/master가 없으면 첫 번째 브랜치 사용
             if remote_branches and remote_branches[0].strip():
@@ -125,12 +122,12 @@ class GitManager:
                 if 'origin/' in first_branch:
                     return first_branch.split('origin/')[-1]
 
-            # 기본값
-            return 'main'
+            # 기본값 (constants에서 관리)
+            return GitConstants.DEFAULT_BRANCH_PRIORITY[0]
 
         except Exception as e:
             logging.warning(f"기본 브랜치 확인 실패: {e}")
-            return 'main'
+            return GitConstants.DEFAULT_BRANCH_PRIORITY[0]
 
     def get_all_branches(self) -> Dict[str, List[str]]:
         """모든 브랜치 목록 가져오기 (로컬 + 원격)"""
@@ -149,7 +146,7 @@ class GitManager:
                                       encoding='utf-8', errors='replace')
                 branches['current'] = result.stdout.strip()
             except:
-                branches['current'] = 'main'
+                branches['current'] = GitConstants.DEFAULT_BRANCH_PRIORITY[0]
 
             # 로컬 브랜치 목록
             try:
@@ -203,10 +200,11 @@ class GitManager:
 
         except Exception as e:
             logging.error(f"브랜치 목록 가져오기 실패: {e}")
+            default_branch = GitConstants.DEFAULT_BRANCH_PRIORITY[0]
             return {
-                'local': ['main'],
-                'remote': ['main'],
-                'current': 'main'
+                'local': [default_branch],
+                'remote': [default_branch],
+                'current': default_branch
             }
 
     def switch_branch(self, branch_name: str) -> bool:

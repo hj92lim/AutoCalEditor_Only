@@ -9,8 +9,12 @@ import logging
 import os
 import sys
 import threading
+import json
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+
+# 중앙 집중식 상수 관리 모듈 import
+from core.constants import PerformanceConstants, DatabaseConstants
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import json
@@ -320,25 +324,27 @@ def main():
     print("🚀 프로덕션 준비된 DB → C 코드 변환 프로세서")
     print("=" * 80)
     
-    # 설정
+    # 설정 (constants에서 관리)
     config = ProductionConfig(
-        batch_size=500,
-        chunk_size=1000,
+        batch_size=DatabaseConstants.BATCH_SIZE_MEDIUM,
+        chunk_size=DatabaseConstants.BATCH_SIZE_SMALL,
         gc_interval=4,
         enable_connection_pooling=True,
         enable_parallel_processing=True,
-        max_workers=4,
-        connection_pool_size=10,
-        max_memory_mb=1024
+        max_workers=PerformanceConstants.DEFAULT_MAX_WORKERS,
+        connection_pool_size=PerformanceConstants.CONNECTION_POOL_SIZE,
+        max_memory_mb=PerformanceConstants.MAX_MEMORY_MB
     )
     
-    # DB 파일 수집
-    db_dir = Path('database')
+    # DB 파일 수집 (constants에서 관리)
+    db_dir = Path(DatabaseConstants.DATABASE_DIR)
     if not db_dir.exists():
         print("❌ Database 디렉토리가 존재하지 않습니다.")
         return
-    
-    db_files = [f for f in db_dir.glob('*.db') if f.stat().st_size > 50000]
+
+    from core.constants import ValidationConstants
+    db_files = [f for f in db_dir.glob(f'*{DatabaseConstants.DB_EXTENSION}')
+                if f.stat().st_size > ValidationConstants.MIN_DB_FILE_SIZE]
     
     if not db_files:
         print("❌ 처리할 DB 파일이 없습니다.")

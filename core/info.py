@@ -1,20 +1,31 @@
 from enum import Enum
 from typing import Dict, List, Any
 
+# 새로운 중앙 집중식 상수 관리 모듈 import
+from core.constants import (
+    ApplicationConstants, DatabaseConstants, ExcelConstants,
+    CodeGenerationConstants, LegacyConstants
+)
+
 
 class EMkFile(Enum):
+    """파일 생성 모드"""
     Src = 0
     Hdr = 1
     All = 2
 
+
 class EArrType(Enum):
+    """배열 타입 정의"""
     SizeErr = 0
     Type1 = 1  # n by n 배열
     Type2 = 2  # 1 by n 배열
     Type3 = 3  # 1 by n 배열 분할
     Type4 = 4  # 1 by n 배열 세로 정렬
 
+
 class EErrType(Enum):
+    """오류 타입 정의"""
     EmptyCell = 0
     OpCode = 1
     ArrRowOver = 2
@@ -34,7 +45,9 @@ class EErrType(Enum):
     FileExist = 16
     FileExtension = 17
 
+
 class EMkMode(Enum):
+    """코드 생성 모드"""
     TITLE = 0
     TITLE_S = 1
     TITLE_H = 2
@@ -56,35 +69,40 @@ class EMkMode(Enum):
     ENUM_END = 18
     PRJT_DEF = 19
 
-class Info:
 
-    # 애플리케이션 정보
-    APP_NAME = "AutoCalEditor"
-    APP_VERSION = "2.2"  # 메이저.마이너.패치 형식 권장
-    APP_TITLE = f"{APP_NAME} v{APP_VERSION}"
+class Info:
+    """
+    애플리케이션 정보 및 설정 관리 클래스
+    중앙 집중식 상수 관리를 위해 constants 모듈 사용
+    """
+
+    # 애플리케이션 정보 (constants 모듈에서 가져오기)
+    APP_NAME = ApplicationConstants.APP_NAME
+    APP_VERSION = ApplicationConstants.APP_VERSION
+    APP_TITLE = ApplicationConstants.APP_TITLE
 
     # 파일 확장자 상수
-    DB_EXTENSION = ".db"
-    EXCEL_EXTENSIONS = (".xlsx", ".xls")
-    CSV_EXTENSION = ".csv"
-    C_EXTENSION = ".c"
-    H_EXTENSION = ".h"
+    DB_EXTENSION = DatabaseConstants.DB_EXTENSION
+    EXCEL_EXTENSIONS = ExcelConstants.EXCEL_EXTENSIONS
+    CSV_EXTENSION = ExcelConstants.CSV_EXTENSION
+    C_EXTENSION = CodeGenerationConstants.C_SOURCE_EXT
+    H_EXTENSION = CodeGenerationConstants.C_HEADER_EXT
 
     # 기본 파일명 상수
-    DEFAULT_DB_NAME = "cal_database"
-    BACKUP_PREFIX = "backup"
-    HISTORY_DIR = "history"
-    LOGS_DIR = "logs"
+    DEFAULT_DB_NAME = DatabaseConstants.DEFAULT_DB_NAME
+    BACKUP_PREFIX = DatabaseConstants.BACKUP_PREFIX
+    HISTORY_DIR = DatabaseConstants.HISTORY_DIR
+    LOGS_DIR = DatabaseConstants.LOGS_DIR
 
     # 설정 관련 상수
-    SETTINGS_ORG = "AutoCalEditor"
-    SETTINGS_APP = "AutoCalEditor"
-    LAST_DIRECTORY_KEY = "last_directory"
+    SETTINGS_ORG = ApplicationConstants.SETTINGS_ORG
+    SETTINGS_APP = ApplicationConstants.SETTINGS_APP
+    LAST_DIRECTORY_KEY = ApplicationConstants.LAST_DIRECTORY_KEY
 
     # 파일 필터 상수
     DB_FILE_FILTER = f"SQLite 데이터베이스 (*{DB_EXTENSION})"
-    EXCEL_FILE_FILTER = f"Excel 파일 (*{EXCEL_EXTENSIONS[0]} *{EXCEL_EXTENSIONS[1]})"
-    CSV_FILE_FILTER = f"CSV 파일 (*{CSV_EXTENSION})"
+    EXCEL_FILE_FILTER = ExcelConstants.EXCEL_FILE_FILTER
+    CSV_FILE_FILTER = ExcelConstants.CSV_FILE_FILTER
 
     # UI 텍스트 상수
     EXCEL_TO_DB_MENU_TEXT = "Excel → DB 변환(&I)..."
@@ -92,17 +110,18 @@ class Info:
     EXCEL_TO_DB_PROGRESS_TITLE = "Excel to DB Conversion"
     EXCEL_TO_DB_MULTI_PROGRESS_TITLE = "Converting Multiple Excel Files"
 
-    MaxFileNum = 10  # 최대 파일 생성 갯수
-    PrjtDefCol = 2   # 프로젝트/단계 define 명 col 위치(프로젝트명 + PrjtDefCol)
-    PrjtNameCol = 5  # 프로젝트/단계 define 명 col 위치(프로젝트명 + PrjtNameCol)
-    TabSize = 4
-    
-    ReadingXlsRule = "$"  # 엑셀 read 규칙 기호
-    FileInfoShtName = "FileInfo"  # 시트명(파일정보) 규칙
-    CommPrjtName = "COMMON"
-    ElsePrjtName = "DEFAULT"
-    EndPrjtName = "END"
-    EmptyKey = "Empty"  # 배열이나 변수 정의 시 Keyword 누락을 오류로 인식안하기 위함
+    # 하위 호환성을 위한 레거시 상수들 (constants 모듈에서 가져오기)
+    MaxFileNum = LegacyConstants.MaxFileNum
+    PrjtDefCol = LegacyConstants.PrjtDefCol
+    PrjtNameCol = LegacyConstants.PrjtNameCol
+    TabSize = LegacyConstants.TabSize
+
+    ReadingXlsRule = LegacyConstants.ReadingXlsRule
+    FileInfoShtName = LegacyConstants.FileInfoShtName
+    CommPrjtName = LegacyConstants.CommPrjtName
+    ElsePrjtName = LegacyConstants.ElsePrjtName
+    EndPrjtName = LegacyConstants.EndPrjtName
+    EmptyKey = LegacyConstants.EmptyKey
     
     # OpCode 정보
     dOpCode = {

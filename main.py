@@ -4,8 +4,11 @@ import logging
 import traceback
 from typing import Dict, List, Optional, Any, Tuple
 # test
-# Qt 폰트 경고 메시지 숨기기 (간단한 해결책)
-os.environ['QT_LOGGING_RULES'] = 'qt.qpa.fonts=false'
+# 중앙 집중식 상수 관리 모듈 import (환경 변수 설정용)
+from core.constants import ApplicationConstants
+
+# Qt 폰트 경고 메시지 숨기기 (constants에서 관리)
+os.environ['QT_LOGGING_RULES'] = ApplicationConstants.QT_LOGGING_RULES
 
 # 애플리케이션 정보는 core/info.py에서 중앙 관리
 
@@ -99,42 +102,11 @@ log_file_path = setup_logging()
 # 기본 import
 import subprocess
 
-# 코드 생성 관련 상수 (SSOT 원칙)
-class CodeGenerationConstants:
-    """코드 생성 관련 상수 정의"""
-
-    # 시트 타입 정의
-    FILEINFO_SHEET_TYPE = "FileInfo"
-    CALLIST_SHEET_TYPES = ["CalList", "CalData", "Caldata", "COMMON"]
-    PROJECT_SHEET_PREFIX = "_"
-    UNDEFINED_SHEET_TYPE = "UNDEFINED"
-    END_SHEET_TYPE = "END"
-
-    # 그룹 관련
-    DEFAULT_GROUP_NAME = "Default"
-
-    # 파일 확장자
-    C_SOURCE_EXT = ".c"
-    C_HEADER_EXT = ".h"
-
-    # FileInfo 시트에서 파일명 읽기 위치
-    FILEINFO_FILENAME_ROW_PRIMARY = 9
-    FILEINFO_FILENAME_COL_PRIMARY = 3
-    FILEINFO_FILENAME_ROW_SECONDARY = 8
-    FILEINFO_FILENAME_COL_SECONDARY = 2
-
-    # 타임아웃 설정 (초)
-    MULTI_DB_TIMEOUT = 3600  # 1시간
-    GIT_COMMAND_TIMEOUT = 10  # Git 명령어 타임아웃
-
-    # 진행률 범위
-    PROGRESS_SHEET_CLASSIFICATION_START = 30
-    PROGRESS_SHEET_CLASSIFICATION_END = 50
-    PROGRESS_CODE_GENERATION_START = 50
-    PROGRESS_CODE_GENERATION_END = 95
-
-    # UI 업데이트 간격 (밀리초)
-    GIT_STATUS_UPDATE_INTERVAL = 3000  # 3초마다 Git 상태 업데이트
+# 중앙 집중식 상수 관리 모듈 import (추가 상수들)
+from core.constants import (
+    CodeGenerationConstants, PerformanceConstants, GitConstants,
+    UIConstants, DatabaseConstants
+)
 
 class CodeGenerationHelper:
     """코드 생성 관련 공통 로직을 담당하는 헬퍼 클래스"""
@@ -437,7 +409,7 @@ class DBExcelEditor(QMainWindow):
         # Git 상태 자동 업데이트 타이머
         self.git_status_timer = QTimer()
         self.git_status_timer.timeout.connect(self.update_git_status_display)
-        self.git_status_timer.start(CodeGenerationConstants.GIT_STATUS_UPDATE_INTERVAL)
+        self.git_status_timer.start(GitConstants.GIT_STATUS_UPDATE_INTERVAL)
 
         # 애플리케이션 종료 시 DB 연결 해제 보장
         QApplication.instance().aboutToQuit.connect(self.cleanup)
@@ -508,7 +480,7 @@ class DBExcelEditor(QMainWindow):
     def init_ui(self):
         """UI 초기화"""
         self.setWindowTitle(Info.APP_TITLE)
-        self.setMinimumSize(1200, 800)
+        self.setMinimumSize(UIConstants.MIN_WINDOW_WIDTH, UIConstants.MIN_WINDOW_HEIGHT)
 
         # 중앙 위젯 및 레이아웃
         central_widget = QWidget()
@@ -722,8 +694,8 @@ class DBExcelEditor(QMainWindow):
         splitter.addWidget(left_panel)
         splitter.addWidget(right_panel)
 
-        # 스플리터 비율 설정 (1:3)
-        splitter.setSizes([300, 900])
+        # 스플리터 비율 설정 (constants에서 관리)
+        splitter.setSizes([UIConstants.TREE_VIEW_WIDTH, UIConstants.GRID_VIEW_WIDTH])
 
         # 상태바 생성
         self.statusBar = QStatusBar()
@@ -4725,7 +4697,7 @@ def main():
     # QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
 
     app = QApplication(sys.argv)
-    app.setStyle('Fusion')  # 일관된 UI 스타일 적용
+    app.setStyle(ApplicationConstants.DEFAULT_UI_STYLE)  # 일관된 UI 스타일 적용
 
     # 로깅 시작 메시지
     logging.info("=========================================")

@@ -4,6 +4,9 @@ import os
 import logging
 import gc
 
+# 중앙 집중식 상수 관리 모듈 import
+from core.constants import DatabaseConstants, PerformanceConstants, ExcelConstants
+
 # Cython 최적화 모듈 import (성능 향상)
 try:
     from cython_extensions.data_processor import (
@@ -45,17 +48,8 @@ class DBHandlerV2:
             self.conn.row_factory = sqlite3.Row  # 결과를 딕셔너리 형태로 가져오기 위해
             self.cursor = self.conn.cursor()
 
-            # SQLite 성능 최적화 설정
-            performance_pragmas = [
-                "PRAGMA journal_mode = WAL",           # Write-Ahead Logging (동시성 향상)
-                "PRAGMA synchronous = NORMAL",         # 동기화 레벨 조정 (안전성 유지하면서 성능 향상)
-                "PRAGMA cache_size = 100000",          # 캐시 크기 증가 (100MB)
-                "PRAGMA temp_store = MEMORY",          # 임시 데이터를 메모리에 저장
-                "PRAGMA mmap_size = 268435456",        # 메모리 맵 크기 (256MB)
-                "PRAGMA optimize"                      # 쿼리 최적화 활성화
-            ]
-
-            for pragma in performance_pragmas:
+            # SQLite 성능 최적화 설정 (constants에서 관리)
+            for pragma in DatabaseConstants.PRAGMA_SETTINGS:
                 try:
                     self.cursor.execute(pragma)
                 except sqlite3.Error as e:
@@ -100,15 +94,8 @@ class DBHandlerV2:
             )
             ''')
 
-            # 성능 최적화를 위한 인덱스 생성
-            performance_indexes = [
-                "CREATE INDEX IF NOT EXISTS idx_cells_sheet_row ON cells(sheet_id, row)",
-                "CREATE INDEX IF NOT EXISTS idx_cells_sheet_row_col ON cells(sheet_id, row, col)",
-                "CREATE INDEX IF NOT EXISTS idx_sheets_name ON sheets(name)",
-                "CREATE INDEX IF NOT EXISTS idx_sheets_dollar ON sheets(is_dollar_sheet)"
-            ]
-
-            for index_sql in performance_indexes:
+            # 성능 최적화를 위한 인덱스 생성 (constants에서 관리)
+            for index_sql in DatabaseConstants.PERFORMANCE_INDEXES:
                 try:
                     self.cursor.execute(index_sql)
                 except sqlite3.Error as e:
@@ -390,7 +377,7 @@ class DBHandlerV2:
             sheet_data = [["" for _ in range(max_col + 1)] for _ in range(max_row + 1)]
 
             # 3. 배치 단위로 데이터 로드 (메모리 사용량 제어)
-            batch_size = 50000  # 5만개씩 처리
+            batch_size = DatabaseConstants.BATCH_SIZE_LARGE
             offset = 0
 
             while True:
@@ -425,7 +412,7 @@ class DBHandlerV2:
                 offset += batch_size
 
                 # 대용량 데이터 처리 시 주기적 가비지 컬렉션
-                if offset % (batch_size * 4) == 0:  # 20만개마다
+                if offset % DatabaseConstants.GC_INTERVAL_CELLS == 0:
                     gc.collect()
                     logging.debug(f"시트 {sheet_id}: {offset}개 셀 처리 완료")
 
@@ -449,15 +436,18 @@ class DBHandlerV2:
             max_row = result['max_row'] if result and result['max_row'] is not None else 0
             max_col = result['max_col'] if result and result['max_col'] is not None else 0
 
-            # 최소값 설정
-            max_row = max(max_row, 100)
-            max_col = max(max_col, 50)
+            # 최소값 설정 (constants에서 관리)
+            max_row = max(max_row, ExcelConstants.DEFAULT_ROWS)
+            max_col = max(max_col, ExcelConstants.DEFAULT_COLS)
 
             return {"max_row": max_row, "max_col": max_col}
 
         except Exception as e:
             logging.error(f"시트 메타데이터 조회 오류: {e}")
-            return {"max_row": 100, "max_col": 50}  # 오류 시 기본값
+            return {
+                "max_row": ExcelConstants.DEFAULT_ROWS,
+                "max_col": ExcelConstants.DEFAULT_COLS
+            }  # 오류 시 기본값
 
     def get_sheets(self) -> List[Dict[str, Any]]:
         """
