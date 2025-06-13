@@ -135,12 +135,15 @@ class ExceptionHandler:
         """완료 로그 통합 처리"""
         elapsed_time = time.time() - start_time
         
-        if memory_monitor and memory_monitor._memory_monitoring:
-            final_memory = memory_monitor.get_memory_usage()
-            memory_used = final_memory - initial_memory
-            logging.info(f"{context} 완료 (소요시간: {elapsed_time:.1f}초, 메모리 사용량: {memory_used:.1f}MB)")
-        else:
-            logging.info(f"{context} 완료 (소요시간: {elapsed_time:.1f}초)")
+        # 🚀 성능 최적화: 중요한 성능 정보만 로깅 (1초 이상 걸린 작업만)
+        if elapsed_time >= 1.0:  # 1초 이상 걸린 작업만 로깅
+            if memory_monitor and memory_monitor._memory_monitoring:
+                final_memory = memory_monitor.get_memory_usage()
+                memory_used = final_memory - initial_memory
+                logging.warning(f"⚠️ 성능 주의: {context} 완료 (소요시간: {elapsed_time:.1f}초, 메모리 사용량: {memory_used:.1f}MB)")
+            else:
+                logging.warning(f"⚠️ 성능 주의: {context} 완료 (소요시간: {elapsed_time:.1f}초)")
+        # 1초 미만 작업은 로깅하지 않음 (성능 향상)
 
 
 class ProcessingPipeline:
@@ -163,7 +166,8 @@ class ProcessingPipeline:
         start_time = time.time()
         initial_memory = self.resource_monitor.get_memory_usage()
         
-        logging.info(f"{context} 시작")
+        # 🚀 성능 최적화: 시작 로깅 제거 (성능 향상)
+        # logging.info(f"{context} 시작")
         
         try:
             # 리소스 체크

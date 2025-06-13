@@ -37,7 +37,8 @@ try:
     from core.info import Info, SShtInfo, EMkFile
     from code_generator.make_code import MakeCode
     from code_generator.cal_list import CalList
-    logging.info("✓ 필수 모듈 로드 성공")
+    # 🚀 성능 최적화: 성공 로깅 제거 (성능 향상)
+    # logging.info("✓ 필수 모듈 로드 성공")
 except ImportError as e:
     logging.error(f"기존 코드 모듈 import 실패: {e}. 경로를 확인하세요.")
     print(f"❌ 필수 모듈 로드 실패: {e}")
@@ -49,7 +50,8 @@ except ImportError as e:
 try:
     from production_ready_db_processor import ProductionDBProcessor, ProductionConfig
     OPTIMIZED_PROCESSING_AVAILABLE = True
-    logging.info("✓ 최적화된 DB 프로세서 로드 성공")
+    # 🚀 성능 최적화: 성공 로깅 제거 (성능 향상)
+    # logging.info("✓ 최적화된 DB 프로세서 로드 성공")
 except ImportError as e:
     OPTIMIZED_PROCESSING_AVAILABLE = False
     logging.warning(f"최적화된 프로세서 로드 실패: {e} (기본 기능으로 작동)")
@@ -87,9 +89,9 @@ def setup_logging():
     console_formatter = logging.Formatter('%(levelname)s: %(message)s')
     console_handler.setFormatter(console_formatter)
 
-    # 루트 로거 설정
+    # 루트 로거 설정 - 🚀 성능 최적화: 로깅 레벨 조정
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
+    root_logger.setLevel(logging.WARNING)  # INFO → WARNING으로 변경하여 성능 향상
     root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
 

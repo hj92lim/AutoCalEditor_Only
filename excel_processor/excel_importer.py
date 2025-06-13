@@ -11,7 +11,8 @@ try:
         fast_batch_cell_processing
     )
     USE_CYTHON_EXCEL = True
-    logging.info("✓ Cython Excel 최적화 모듈 로드 성공")
+    # 🚀 성능 최적화: 성공 로깅 제거 (성능 향상)
+    # logging.info("✓ Cython Excel 최적화 모듈 로드 성공")
 except ImportError as e:
     USE_CYTHON_EXCEL = False
     logging.warning(f"⚠ Cython Excel 모듈 로드 실패, Python 폴백 사용: {e}")
@@ -147,7 +148,8 @@ class ExcelImporter:
                                 # DB에 셀 데이터 일괄 저장
                                 if cells_data:
                                     self.db.batch_insert_cells(sheet_id, cells_data)
-                                    logging.info(f"시트 '{sheet_name}' 데이터 저장 완료: {len(cells_data)}개 셀")
+                                    # 🚀 성능 최적화: 성공 로깅 제거 (성능 향상)
+                                    # logging.info(f"시트 '{sheet_name}' 데이터 저장 완료: {len(cells_data)}개 셀")
                                 else:
                                     logging.warning(f"시트 '{sheet_name}' 저장할 데이터가 없습니다.")
 

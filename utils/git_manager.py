@@ -24,11 +24,16 @@ class GitManager:
 
     def __init__(self):
         """
-        GitManager 초기화 (로컬 Git 전용)
+        GitManager 초기화 (로컬 Git 전용) - 🚀 성능 최적화 적용
         """
         self.project_root = Path.cwd()
         self.backup_dir = self.project_root / DatabaseConstants.BACKUP_DIR
         self.history_dir = self.project_root / DatabaseConstants.HISTORY_DIR
+
+        # 🚀 성능 최적화: Git 루트 캐싱
+        self._git_root_cache = None
+        self._git_root_cache_time = 0
+        self._git_root_cache_ttl = 300  # 5분 캐시
 
         # Git 실행 파일 경로 찾기
         self.git_executable = self._find_git_executable()
@@ -37,18 +42,15 @@ class GitManager:
         # backup 디렉토리는 실제 백업 시에만 생성
         self.history_dir.mkdir(exist_ok=True)
 
-        logging.info(f"GitManager 초기화 (로컬 Git 전용): {self.project_root}")
-        logging.info(f"Git 실행 파일: {self.git_executable}")
+        # 🚀 성능 최적화: 로깅 레벨 조정 (WARNING 이상만 출력)
+        # logging.info(f"GitManager 초기화 (로컬 Git 전용): {self.project_root}")
+        # logging.info(f"Git 실행 파일: {self.git_executable}")
 
-        # Git 실행 파일 테스트
+        # Git 실행 파일 테스트 (중요한 정보만 출력)
         if self.git_executable != "git":
-            print(f"🔍 Git 실행 파일 경로: {self.git_executable}")
-            if os.path.exists(self.git_executable):
-                print(f"✅ Git 실행 파일 존재 확인됨")
-            else:
-                print(f"❌ Git 실행 파일 없음!")
-        else:
-            print(f"⚠️ 기본 'git' 명령어 사용 중 - PATH에서 찾기 시도")
+            if not os.path.exists(self.git_executable):
+                print(f"❌ Git 실행 파일 없음: {self.git_executable}")
+        # 성공 메시지는 제거하여 성능 향상
 
     def _find_git_executable(self) -> str:
         """Git 실행 파일 경로 찾기"""
@@ -612,11 +614,20 @@ class GitManager:
             return False
 
     def get_git_root(self) -> str:
-        """Git 저장소 루트 디렉토리 찾기"""
+        """🚀 성능 최적화: Git 저장소 루트 디렉토리 찾기 (캐싱 적용)"""
+        import time
+
+        # 캐시 확인 (5분 TTL)
+        current_time = time.time()
+        if (self._git_root_cache and
+            current_time - self._git_root_cache_time < self._git_root_cache_ttl):
+            return self._git_root_cache
+
         try:
             # 현재 디렉토리에서 시작해서 Git 루트 찾기
             current_dir = os.getcwd()
 
+            # 🚀 성능 최적화: 타임아웃을 3초로 단축 (기존 10초 → 3초)
             # 인코딩 문제 해결을 위한 환경변수 설정
             env = os.environ.copy()
             env['PYTHONIOENCODING'] = 'utf-8'
@@ -630,18 +641,30 @@ class GitManager:
                                   encoding='utf-8',
                                   errors='replace',
                                   env=env,
-                                  timeout=10,
+                                  timeout=3,  # 🚀 10초 → 3초로 단축
                                   check=True)
             git_root = result.stdout.strip()
 
             # Windows 경로 정규화 (슬래시 통일)
             git_root = git_root.replace('\\', '/')
-            logging.info(f"Git 루트 찾음: {git_root} (현재 디렉토리: {current_dir})")
+
+            # 🚀 성능 최적화: 캐시에 저장
+            self._git_root_cache = git_root
+            self._git_root_cache_time = current_time
+
+            # 🚀 성능 최적화: 로깅 제거 (성능 향상)
+            # logging.info(f"Git 루트 찾음: {git_root} (현재 디렉토리: {current_dir})")
             return git_root
         except Exception as e:
             # Git 루트를 찾을 수 없으면 현재 디렉토리 사용
             current_dir = os.getcwd()
-            logging.warning(f"Git 루트 찾기 실패: {e}, 현재 디렉토리 사용: {current_dir}")
+
+            # 🚀 성능 최적화: 캐시에 저장 (실패한 경우도 캐시하여 반복 호출 방지)
+            self._git_root_cache = current_dir
+            self._git_root_cache_time = current_time
+
+            # 🚀 성능 최적화: 에러 시에만 로깅 (성능 향상)
+            logging.error(f"Git 루트 찾기 실패: {e}, 현재 디렉토리 사용: {current_dir}")
             return current_dir
 
     def get_current_branch(self) -> str:
@@ -793,17 +816,19 @@ class GitManager:
 
                     result = EmptyResult()
 
-            # 디버깅을 위한 원본 출력 로그
-            stdout_preview = result.stdout[:200] if result.stdout else "(빈 출력)"
-            logging.info(f"Git status 원본 출력 (처음 200자): {repr(stdout_preview)}")
+            # 🚀 성능 최적화: 디버깅 로깅 제거 (성능 향상)
+            # stdout_preview = result.stdout[:200] if result.stdout else "(빈 출력)"
+            # logging.info(f"Git status 원본 출력 (처음 200자): {repr(stdout_preview)}")
 
             changed_files = []
             if not result.stdout.strip():
-                logging.info("Git status 출력이 비어있음 - 변경된 파일 없음")
+                # 🚀 성능 최적화: 정상 상황 로깅 제거
+                # logging.info("Git status 출력이 비어있음 - 변경된 파일 없음")
                 return []
 
             lines = result.stdout.strip().split('\n')
-            logging.info(f"Git status 파싱: {len(lines)}개 라인")
+            # 🚀 성능 최적화: 파싱 로깅 제거
+            # logging.info(f"Git status 파싱: {len(lines)}개 라인")
 
             for line_num, line in enumerate(lines, 1):
                 if not line.strip():
@@ -876,16 +901,17 @@ class GitManager:
                     except Exception as fix_error:
                         logging.debug(f"인코딩 문제 파일 수정 실패: {fix_error}")
 
+                # 🚀 성능 최적화: main.py 관련 로깅 제거 (성능 향상)
                 # main.py 관련 특별 로그
                 if 'main.py' in filename:
-                    logging.info(f"🔍 main.py 발견 - 라인 {line_num}: 원본='{line}', 상태='{status}', 파일명='{filename}'")
-                    logging.info(f"   파일명 길이: {len(filename)}, 바이트: {filename.encode('utf-8')}")
+                    # logging.info(f"🔍 main.py 발견 - 라인 {line_num}: 원본='{line}', 상태='{status}', 파일명='{filename}'")
+                    # logging.info(f"   파일명 길이: {len(filename)}, 바이트: {filename.encode('utf-8')}")
 
                     # 경로 수정 시도 (임시 해결책)
                     if filename.startswith('7_Python_DB_Refactoring/') and not filename.startswith('07_'):
                         original_filename = filename
                         filename = '0' + filename  # 앞에 0 추가
-                        logging.info(f"   🔧 경로 수정: '{original_filename}' -> '{filename}'")
+                        # logging.info(f"   🔧 경로 수정: '{original_filename}' -> '{filename}'")
 
                 # 파일명 정규화 (백슬래시를 슬래시로)
                 filename = filename.replace('\\', '/')
@@ -940,9 +966,12 @@ class GitManager:
                     filename.strip()):  # 빈 파일명 제외
                     valid_files.append(file_info)
                 else:
-                    logging.info(f"유효하지 않은 파일 제외: {filename[:50]}...")
+                    # 🚀 성능 최적화: 유효하지 않은 파일 로깅 제거
+                    # logging.info(f"유효하지 않은 파일 제외: {filename[:50]}...")
+                    pass
 
-            logging.info(f"유효한 파일 {len(valid_files)}개 / 전체 {len(changed_files)}개")
+            # 🚀 성능 최적화: 파일 개수 로깅 제거 (성능 향상)
+            # logging.info(f"유효한 파일 {len(valid_files)}개 / 전체 {len(changed_files)}개")
             return valid_files
 
         except Exception as e:
