@@ -164,12 +164,21 @@ class MakeCode:
                 raise RuntimeError(error_msg)
 
     def _process_single_sheet(self, sheet_index: int, progress_callback):
-        """단일 시트 처리 - 통합 파이프라인 사용"""
+        """단일 시트 처리 - 시트별 진행률 지원"""
         sheet_name = self.cl[sheet_index].ShtName
+        total_sheets = len(self.cl)
 
         def process_sheet():
-            # 실제 시트 데이터 읽기
-            self.cl[sheet_index].ReadCalList(progress_callback)
+            # 시트별 진행률 콜백 생성
+            def sheet_progress_callback(sheet_progress, sheet_message):
+                if progress_callback:
+                    # 전체 시트 중 현재 시트의 진행률 계산
+                    overall_progress = int(((sheet_index + (sheet_progress / 100)) / total_sheets) * 100)
+                    overall_message = f"시트 {sheet_index+1}/{total_sheets}: {sheet_name} - {sheet_message}"
+                    progress_callback(overall_progress, overall_message)
+
+            # 실제 시트 데이터 읽기 (시트별 진행률 전달)
+            self.cl[sheet_index].ReadCalList(sheet_progress_callback)
 
             # 프로젝트명 추가 (인덱스 일치 보장)
             project_name = self.cl[sheet_index].PrjtNameMain if self.cl[sheet_index].PrjtNameMain else ""

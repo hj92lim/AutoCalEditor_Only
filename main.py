@@ -2205,10 +2205,50 @@ class DBExcelEditor(QMainWindow):
 
             # Excel 파일을 DB로 변환 (사용자가 지정한 DB 파일명 전달)
             logging.info(f"Excel → DB 변환 시도: {file_path} -> {db_file_path}")
-            self.statusBar.showMessage("Excel 파일을 DB로 변환 중...")
-            QApplication.processEvents()  # 상태 메시지 업데이트 강제
 
-            file_id = self.importer.import_excel(file_path, db_file_path)
+            # 🚀 단일 Excel → DB 변환 진행률 대화상자 생성
+            from PySide6.QtWidgets import QProgressDialog
+            excel_name = os.path.basename(file_path)
+            progress = QProgressDialog(f"'{excel_name}' 파일을 데이터베이스로 변환 중...", "취소", 0, 100, self)
+            progress.setWindowTitle("Excel → DB 변환")
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setMinimumDuration(0)
+            progress.show()
+
+            try:
+                # 진행률 업데이트 함수 (응답없음 방지)
+                last_update_time = 0
+                def update_progress(value: int, message: str):
+                    nonlocal last_update_time
+                    import time
+                    current_time = time.time()
+
+                    # 0.1초마다만 업데이트 (응답없음 방지)
+                    if current_time - last_update_time < 0.1 and value < 100:
+                        return
+
+                    if progress.wasCanceled():
+                        raise InterruptedError("사용자가 변환을 취소했습니다.")
+                    progress.setValue(value)
+                    progress.setLabelText(message)
+                    QApplication.processEvents()
+                    last_update_time = current_time
+
+                update_progress(10, "Excel 파일 분석 중...")
+
+                # Excel 파일 변환 실행
+                file_id = self.importer.import_excel_with_progress(file_path, db_file_path, update_progress)
+
+                update_progress(100, "변환 완료!")
+                progress.close()
+
+            except InterruptedError as e:
+                progress.close()
+                QMessageBox.information(self, "변환 취소", "Excel → DB 변환이 취소되었습니다.")
+                return
+            except Exception as e:
+                progress.close()
+                raise
 
             # 파일 목록 새로고침 (파일 변환 후 새 데이터 표시)
             self.load_files()
@@ -2821,7 +2861,8 @@ class DBExcelEditor(QMainWindow):
             # 진행률 대화상자 생성
             from PySide6.QtWidgets import QProgressDialog
             db_name = os.path.basename(selected_db.db_file)
-            progress = QProgressDialog(f"코드 생성 중: {db_name}", "취소", 0, 100, self)
+            progress = QProgressDialog(f"'{db_name}' 데이터베이스에서 C 코드 생성 중...", "취소", 0, 100, self)
+            progress.setWindowTitle("DB → Code 변환")
             progress.setWindowModality(Qt.WindowModal)
             progress.setMinimumDuration(0)
             progress.setAutoClose(False)
@@ -2908,6 +2949,7 @@ class DBExcelEditor(QMainWindow):
             # 진행률 대화상자 생성
             from PySide6.QtWidgets import QProgressDialog
             progress = QProgressDialog(f"다중 DB 코드 생성 중... (0/{len(selected_dbs)})", "취소", 0, len(selected_dbs), self)
+            progress.setWindowTitle("다중 DB → Code 변환")
             progress.setWindowModality(Qt.WindowModal)
             progress.setMinimumDuration(0)
             progress.show()
@@ -3103,7 +3145,7 @@ class DBExcelEditor(QMainWindow):
                         raise InterruptedError("사용자가 코드 생성을 취소했습니다.")
 
             if progress_dialog:
-                optimized_progress_callback(10, "🚀 최적화된 시트 분류 중...")
+                optimized_progress_callback(10, "데이터베이스 시트 분석 중...")
 
             # 1. 시트 그룹별 분류 (최적화된 헬퍼 함수 사용)
             d_xls = CodeGenerationHelper.classify_sheets_by_group_optimized(db_handler)
@@ -3112,7 +3154,7 @@ class DBExcelEditor(QMainWindow):
                 return "코드 생성할 $ 시트가 없습니다.", []
 
             if progress_dialog:
-                optimized_progress_callback(30, f"🚀 코드 생성 시작... ({len(d_xls)}개 그룹)")
+                optimized_progress_callback(30, f"C 코드 생성 시작... ({len(d_xls)}개 그룹)")
 
             # 2. 각 그룹별 코드 생성 (최적화된 처리)
             result_message = f"🚀 최적화된 코드 생성 결과 ({db_name}):\n\n"
@@ -3126,7 +3168,7 @@ class DBExcelEditor(QMainWindow):
                 # 🚀 최적화된 진행률 업데이트 (5% 단위로만)
                 if progress_dialog:
                     progress_val = 30 + int((group_idx / len(d_xls)) * 60)  # 30-90% 범위
-                    optimized_progress_callback(progress_val, f"⚡ '{group_name}' 그룹 처리 중 ({group_idx+1}/{len(d_xls)})")
+                    optimized_progress_callback(progress_val, f"'{group_name}' 그룹 처리 중... ({group_idx+1}/{len(d_xls)})")
 
                 # 그룹 검증
                 if not group_data['FileInfoSht'] or not group_data['CalListSht']:
@@ -3176,9 +3218,22 @@ class DBExcelEditor(QMainWindow):
                     )
                     target_file_name = f"{base_name}{CodeGenerationConstants.C_SOURCE_EXT}"
 
-                    # 코드 읽기 및 변환 (함수명 정확성 개선)
-                    make_code.ReadDBtoTempCode()
-                    make_code.ConvTempCodetoC(db_name, target_file_name)
+                    # 코드 읽기 및 변환 (시트별 진행률 지원)
+                    def sheet_progress_callback(sheet_progress, sheet_message):
+                        if progress_dialog:
+                            # 그룹 내 시트별 진행률 계산 (그룹 진행률 범위 내에서)
+                            group_base_progress = 30 + int((group_idx / len(d_xls)) * 60)
+                            group_next_progress = 30 + int(((group_idx + 1) / len(d_xls)) * 60)
+                            group_range = group_next_progress - group_base_progress
+
+                            # 시트 진행률을 그룹 범위 내로 매핑
+                            final_progress = group_base_progress + int((sheet_progress / 100) * group_range)
+                            final_message = f"'{group_name}' 그룹 - {sheet_message}"
+
+                            optimized_progress_callback(final_progress, final_message)
+
+                    make_code.ReadDBtoTempCode(sheet_progress_callback)
+                    make_code.ConvTempCodetoC(db_name, target_file_name, sheet_progress_callback)
 
                     # 변환 중 오류 확인
                     if Info.ErrList:
@@ -3241,7 +3296,7 @@ class DBExcelEditor(QMainWindow):
 
             # 최종 결과 처리
             if progress_dialog:
-                optimized_progress_callback(95, "결과 정리 중...")
+                optimized_progress_callback(95, "생성된 파일 정리 중...")
 
             if has_errors:
                 final_msg = f"코드 생성 완료 (일부 오류 발생): {len(d_xls)}개 그룹 중 일부에서 오류"

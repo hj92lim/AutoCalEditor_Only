@@ -29,13 +29,41 @@ class ExcelImporter:
         """
         self.db = db_handler
 
-    def import_excel(self, excel_path: str, db_file_path: str = None) -> int:
+    def import_excel_with_progress(self, excel_path: str, db_file_path: str = None, progress_callback=None) -> int:
         """
-        Excel 파일을 DB로 가져오기 (안정성 강화)
+        Excel 파일을 DB로 가져오기 (진행률 지원)
 
         Args:
             excel_path: Excel 파일 경로
             db_file_path: 사용자 지정 DB 파일 경로 (지정된 경우)
+            progress_callback: 진행률 업데이트 콜백 함수
+
+        Returns:
+            생성된 파일 ID
+        """
+        return self._import_excel_internal(excel_path, db_file_path, progress_callback)
+
+    def import_excel(self, excel_path: str, db_file_path: str = None) -> int:
+        """
+        Excel 파일을 DB로 가져오기 (안정성 강화, 기존 호환성)
+
+        Args:
+            excel_path: Excel 파일 경로
+            db_file_path: 사용자 지정 DB 파일 경로 (지정된 경우)
+
+        Returns:
+            생성된 파일 ID
+        """
+        return self._import_excel_internal(excel_path, db_file_path, None)
+
+    def _import_excel_internal(self, excel_path: str, db_file_path: str = None, progress_callback=None) -> int:
+        """
+        Excel 파일을 DB로 가져오기 (내부 구현)
+
+        Args:
+            excel_path: Excel 파일 경로
+            db_file_path: 사용자 지정 DB 파일 경로 (지정된 경우)
+            progress_callback: 진행률 업데이트 콜백 함수
 
         Returns:
             생성된 파일 ID
@@ -46,12 +74,30 @@ class ExcelImporter:
         wb = None
 
         try:
+            # 진행률 업데이트 함수 (응답없음 방지)
+            last_update_time = 0
+            def update_progress(value: int, message: str):
+                nonlocal last_update_time
+                if progress_callback:
+                    import time
+                    current_time = time.time()
+
+                    # 0.2초마다만 업데이트 (응답없음 방지)
+                    if current_time - last_update_time < 0.2 and value < 100:
+                        return
+
+                    progress_callback(value, message)
+                    last_update_time = current_time
+
+            update_progress(20, "Excel 애플리케이션 시작 중...")
+
             # Excel 파일 열기 (안전한 방식)
             app = xw.App(visible=False, add_book=False)
             app.display_alerts = False  # 경고 메시지 비활성화
 
             logging.info(f"Excel 애플리케이션 시작 완료")
 
+            update_progress(30, "Excel 파일 열기 중...")
             wb = app.books.open(excel_path)
             logging.info(f"Excel 파일 열기 완료: {excel_path}")
 
@@ -80,8 +126,15 @@ class ExcelImporter:
             dollar_sheets_count = 0
 
             logging.info(f"Excel 파일 총 시트 개수: {total_sheets}")
+            update_progress(40, f"시트 분석 중... ({total_sheets}개 시트 발견)")
 
             for sheet_idx, sheet in enumerate(wb.sheets):
+                # 시트별 진행률 업데이트 (40-90% 범위, 안전성 강화)
+                if total_sheets > 0:
+                    sheet_progress = 40 + int((sheet_idx / total_sheets) * 50)
+                    # 진행률 역행 방지
+                    sheet_progress = max(40, min(90, sheet_progress))
+                    update_progress(sheet_progress, f"시트 처리 중: {sheet.name} ({sheet_idx+1}/{total_sheets})")
                 sheet_name = sheet.name
                 logging.info(f"시트 {sheet_idx + 1}/{total_sheets}: '{sheet_name}' 확인 중...")
 
@@ -168,6 +221,7 @@ class ExcelImporter:
                     logging.debug(f"시트 '{sheet_name}' $ 없음, 건너뛰기")
 
             logging.info(f"Excel 가져오기 완료: 총 {total_sheets}개 시트 중 {dollar_sheets_count}개 $ 시트 처리")
+            update_progress(95, "Excel 파일 정리 중...")
 
             # Excel 파일 안전하게 닫기
             try:

@@ -350,11 +350,18 @@ class CalList:
             row_indices = list(range(self.itemStartPos.Row, len(self.shtData)))
 
             # 🚀 극한 최적화: 배치 크기 대폭 증가 (10배)
+            def enhanced_progress_callback(progress, message):
+                if progress_callback:
+                    # 시트 내 행 처리 진행률 (0-80% 범위)
+                    sheet_progress = int(progress * 0.8)
+                    sheet_message = f"데이터 처리 중... ({len(row_indices)}행)"
+                    progress_callback(sheet_progress, sheet_message)
+
             return self.pipeline.process_batch_with_progress(
                 row_indices,
                 lambda row: self._process_single_row(row, item_list),
                 f"시트 {self.ShtName} 데이터 처리",
-                progress_callback,
+                enhanced_progress_callback,
                 batch_size * 10  # 배치 크기 10배 증가
             )
 
@@ -367,8 +374,15 @@ class CalList:
             2048  # 2GB 메모리 제한
         )
 
-        # 코드 생성 단계
-        self._generate_temp_code(progress_callback)
+        # 코드 생성 단계 (80-100% 범위)
+        def code_progress_callback(progress, message):
+            if progress_callback:
+                # 코드 생성 진행률 (80-100% 범위)
+                sheet_progress = 80 + int(progress * 0.2)
+                sheet_message = "코드 생성 중..."
+                progress_callback(sheet_progress, sheet_message)
+
+        self._generate_temp_code(code_progress_callback)
 
         return results
 
