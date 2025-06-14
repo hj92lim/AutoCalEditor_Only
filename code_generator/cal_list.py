@@ -350,39 +350,48 @@ class CalList:
             row_indices = list(range(self.itemStartPos.Row, len(self.shtData)))
 
             # 🚀 극한 최적화: 배치 크기 대폭 증가 (10배)
-            def enhanced_progress_callback(progress, message):
-                if progress_callback:
-                    # 시트 내 행 처리 진행률 (0-80% 범위)
-                    sheet_progress = int(progress * 0.8)
-                    sheet_message = f"데이터 처리 중... ({len(row_indices)}행)"
-                    progress_callback(sheet_progress, sheet_message)
-
+            # 진행률 콜백 제거 (상위에서 관리)
             return self.pipeline.process_batch_with_progress(
                 row_indices,
                 lambda row: self._process_single_row(row, item_list),
                 f"시트 {self.ShtName} 데이터 처리",
-                enhanced_progress_callback,
+                None,  # 진행률 콜백 제거
                 batch_size * 10  # 배치 크기 10배 증가
             )
 
-        # 통합 파이프라인으로 처리
+        # 🚨 진행률 역행 방지: 전역 진행률 추적
+        current_progress = 0
+
+        def safe_progress_update(new_progress, message):
+            """진행률 역행 방지 함수"""
+            nonlocal current_progress
+            if new_progress > current_progress:
+                current_progress = new_progress
+                if progress_callback:
+                    progress_callback(current_progress, message)
+
+        # 통합 파이프라인으로 처리 (진행률 콜백 제거)
         results = self.pipeline.execute_with_monitoring(
             process_sheet_data,
             f"시트 {self.ShtName} ReadCalList",
-            progress_callback,
+            None,  # 내부에서 진행률 관리
             600,  # 10분 타임아웃
             2048  # 2GB 메모리 제한
         )
 
+        # 데이터 처리 완료 시점 진행률 업데이트
+        safe_progress_update(80, "데이터 처리 완료, 코드 생성 시작...")
+
         # 코드 생성 단계 (80-100% 범위)
         def code_progress_callback(progress, message):
-            if progress_callback:
-                # 코드 생성 진행률 (80-100% 범위)
-                sheet_progress = 80 + int(progress * 0.2)
-                sheet_message = "코드 생성 중..."
-                progress_callback(sheet_progress, sheet_message)
+            sheet_progress = 80 + int(progress * 0.2)
+            sheet_message = "코드 생성 중..."
+            safe_progress_update(sheet_progress, sheet_message)
 
         self._generate_temp_code(code_progress_callback)
+
+        # 최종 완료 보장
+        safe_progress_update(100, "시트 처리 완료")
 
         return results
 

@@ -164,16 +164,21 @@ class MakeCode:
                 raise RuntimeError(error_msg)
 
     def _process_single_sheet(self, sheet_index: int, progress_callback):
-        """단일 시트 처리 - 시트별 진행률 지원"""
+        """단일 시트 처리 - 진행률 역행 방지"""
         sheet_name = self.cl[sheet_index].ShtName
         total_sheets = len(self.cl)
 
+        # 🚨 진행률 역행 방지: 시트별 진행률 추적
+        current_sheet_progress = 0
+
         def process_sheet():
-            # 시트별 진행률 콜백 생성
+            # 시트별 진행률 콜백 생성 (역행 방지)
             def sheet_progress_callback(sheet_progress, sheet_message):
-                if progress_callback:
+                nonlocal current_sheet_progress
+                if progress_callback and sheet_progress > current_sheet_progress:
+                    current_sheet_progress = sheet_progress
                     # 전체 시트 중 현재 시트의 진행률 계산
-                    overall_progress = int(((sheet_index + (sheet_progress / 100)) / total_sheets) * 100)
+                    overall_progress = int(((sheet_index + (current_sheet_progress / 100)) / total_sheets) * 100)
                     overall_message = f"시트 {sheet_index+1}/{total_sheets}: {sheet_name} - {sheet_message}"
                     progress_callback(overall_progress, overall_message)
 
@@ -183,6 +188,12 @@ class MakeCode:
             # 프로젝트명 추가 (인덱스 일치 보장)
             project_name = self.cl[sheet_index].PrjtNameMain if self.cl[sheet_index].PrjtNameMain else ""
             self.PrjtList.append(project_name)
+
+            # 시트 완료 보장
+            if progress_callback:
+                final_progress = int(((sheet_index + 1) / total_sheets) * 100)
+                final_message = f"시트 {sheet_index+1}/{total_sheets}: {sheet_name} - 완료"
+                progress_callback(final_progress, final_message)
 
             return f"시트 {sheet_name} 처리 완료"
 
