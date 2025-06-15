@@ -85,21 +85,27 @@ OPCODE_MAPPING = {
     "$PRJT_DEF": EMkMode.PRJT_DEF,
 }
 
-# OpCode → 아이콘 매핑
+# OpCode → 아이콘 매핑 (완전한 텍스트 기반 인터페이스)
 ICON_MAPPING = {
-    EMkMode.TITLE: "📘", EMkMode.TITLE_H: "📘", EMkMode.TITLE_S: "📘",
-    EMkMode.SUBTITLE: "📄", EMkMode.DESCRIPT: "📝",
-    EMkMode.DEFINE: "🔧", EMkMode.VARIABLE: "💾",
-    EMkMode.ARRAY: "🔲", EMkMode.ENUM: "📊",
-    EMkMode.TYPEDEF: "📋", EMkMode.CODE: "⚙️",
-    EMkMode.PRGM_SET: "🔧", EMkMode.PRGM_END: "🔧",
-    EMkMode.PRJT_DEF: "📁"
+    # 모든 이모지 제거 - 텍스트만으로 깔끔한 인터페이스
+    EMkMode.TITLE: "", EMkMode.TITLE_H: "", EMkMode.TITLE_S: "",
+    EMkMode.SUBTITLE: "",  # 필터링됨
+    EMkMode.DESCRIPT: "",  # 필터링됨
+    EMkMode.DEFINE: "",
+    EMkMode.VARIABLE: "",
+    EMkMode.ARRAY: "",     # 이모지 제거
+    EMkMode.ENUM: "",
+    EMkMode.TYPEDEF: "",
+    EMkMode.CODE: "",
+    EMkMode.PRGM_SET: "",
+    EMkMode.PRGM_END: "",
+    EMkMode.PRJT_DEF: ""   # 이모지 제거
 }
 
-# 네비게이터에 표시할 OpCode들
+# 네비게이터에 표시할 OpCode들 ($DESCRIPT, $SUBTITLE 제외)
 DISPLAY_OPCODES = {
     EMkMode.TITLE, EMkMode.TITLE_H, EMkMode.TITLE_S,
-    EMkMode.SUBTITLE, EMkMode.DESCRIPT, EMkMode.DEFINE,
+    EMkMode.DEFINE,  # EMkMode.DESCRIPT, EMkMode.SUBTITLE 제거
     EMkMode.VARIABLE, EMkMode.ARRAY, EMkMode.ENUM,
     EMkMode.TYPEDEF, EMkMode.CODE, EMkMode.PRGM_SET,
     EMkMode.PRJT_DEF
