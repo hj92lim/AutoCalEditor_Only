@@ -256,29 +256,26 @@ class NavigatorWidget(QWidget):
             nav_item: NavigatorItem
         """
         try:
-            # OpCode 추출 (안전한 방식)
-            opcode_text = getattr(nav_item, 'opcode', None)
-            if not opcode_text:
+            # OpCode 추출 (EMkMode 열거형 값)
+            opcode_enum = getattr(nav_item, 'opcode', None)
+            if not opcode_enum:
                 # 기본 색상 적용
                 tree_item.setForeground(0, QColor(33, 33, 33))  # 기본 검정
                 return
 
-            # OpCode 매핑에서 색상 찾기
-            if opcode_text in OPCODE_MAPPING:
-                opcode_enum = OPCODE_MAPPING[opcode_text]
-                if opcode_enum in OPCODE_COLORS:
-                    color = OPCODE_COLORS[opcode_enum]
-                    # 전경색으로 적용 (배경색 대신)
-                    tree_item.setForeground(0, color)
-                    return
+            # OpCode 색상 매핑에서 색상 찾기
+            if opcode_enum in OPCODE_COLORS:
+                color = OPCODE_COLORS[opcode_enum]
+                # 전경색으로 적용
+                tree_item.setForeground(0, color)
+                return
 
             # 매핑되지 않은 OpCode는 기본 색상
             tree_item.setForeground(0, QColor(33, 33, 33))  # 기본 검정
 
-        except Exception as e:
+        except Exception:
             # 색상 적용 실패 시에도 Navigator 기능에 영향 없도록 예외 처리
             tree_item.setForeground(0, QColor(33, 33, 33))  # 기본 검정
-            # 로그는 출력하지 않음 (사용자에게 불필요한 정보)
 
     def _on_item_clicked(self, item, _column):
         """아이템 클릭 처리"""

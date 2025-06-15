@@ -41,26 +41,26 @@ class NavigatorConstants:
     MAX_OPCODE_SEARCH_ROWS = 50    # OpCode 검색할 최대 행 수
     NAME_PATTERN_THRESHOLD = 0.3   # 변수명 패턴 임계값
 
-# OpCode 색상 팔레트 (기존 시스템과 호환)
+# OpCode 색상 팔레트 (Navigator 전경색용 - 진한 색상)
 OPCODE_COLORS = {
-    EMkMode.TITLE: QColor(173, 216, 230, 102),      # 연한 파란색
-    EMkMode.TITLE_H: QColor(173, 216, 230, 102),    # 헤더 타이틀
-    EMkMode.TITLE_S: QColor(173, 216, 230, 102),    # 소스 타이틀
-    EMkMode.SUBTITLE: QColor(173, 216, 230, 77),    # 더 연한 파란색
-    EMkMode.DESCRIPT: QColor(173, 216, 230, 51),    # 매우 연한 파란색
-    EMkMode.DEFINE: QColor(144, 238, 144, 102),     # 연한 초록색
-    EMkMode.VARIABLE: QColor(144, 238, 144, 77),    # 더 연한 초록색
-    EMkMode.TYPEDEF: QColor(255, 255, 224, 128),    # 연한 노란색
-    EMkMode.ENUM: QColor(255, 255, 224, 102),       # 더 연한 노란색
-    EMkMode.ENUM_MEM: QColor(255, 255, 224, 77),    # 매우 연한 노란색
-    EMkMode.ARRAY: QColor(255, 218, 185, 102),      # 연한 주황색
-    EMkMode.ARR_MEM: QColor(255, 218, 185, 77),     # 더 연한 주황색
-    EMkMode.STR_MEM: QColor(255, 218, 185, 77),     # 구조체 멤버
-    EMkMode.CODE: QColor(221, 160, 221, 102),       # 연한 보라색
-    EMkMode.PRGM_SET: QColor(221, 160, 221, 77),    # 프라그마 시작
-    EMkMode.PRGM_END: QColor(221, 160, 221, 77),    # 프라그마 종료
-    EMkMode.PRJT_DEF: QColor(211, 211, 211, 102),   # 연한 회색
-    EMkMode.NONE: QColor(255, 255, 255, 255),       # 흰색 (기본)
+    EMkMode.TITLE: QColor(0, 100, 200),         # 진한 파란색
+    EMkMode.TITLE_H: QColor(0, 100, 200),       # 헤더 타이틀
+    EMkMode.TITLE_S: QColor(0, 100, 200),       # 소스 타이틀
+    EMkMode.SUBTITLE: QColor(0, 80, 160),       # 더 진한 파란색
+    EMkMode.DESCRIPT: QColor(100, 100, 100),    # 회색
+    EMkMode.DEFINE: QColor(200, 0, 0),          # 진한 빨간색
+    EMkMode.VARIABLE: QColor(0, 150, 0),        # 진한 초록색
+    EMkMode.TYPEDEF: QColor(150, 100, 0),       # 진한 갈색
+    EMkMode.ENUM: QColor(150, 0, 150),          # 진한 보라색
+    EMkMode.ENUM_MEM: QColor(120, 0, 120),      # 더 진한 보라색
+    EMkMode.ARRAY: QColor(200, 100, 0),         # 진한 주황색
+    EMkMode.ARR_MEM: QColor(180, 90, 0),        # 더 진한 주황색
+    EMkMode.STR_MEM: QColor(180, 90, 0),        # 구조체 멤버
+    EMkMode.CODE: QColor(100, 100, 100),        # 회색
+    EMkMode.PRGM_SET: QColor(150, 0, 150),      # 진한 보라색
+    EMkMode.PRGM_END: QColor(150, 0, 150),      # 진한 보라색
+    EMkMode.PRJT_DEF: QColor(100, 100, 100),    # 회색
+    EMkMode.NONE: QColor(33, 33, 33),           # 기본 검정
 }
 
 # OpCode 문자열 → EMkMode 매핑
