@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 
 from .navigator_core import NavigatorParser
+from .navigator_constants import OPCODE_COLORS, OPCODE_MAPPING
 
 class NavigatorWidget(QWidget):
     """네비게이터 위젯 (기존 시스템과 완전 독립)"""
@@ -183,6 +184,9 @@ class NavigatorWidget(QWidget):
             tree_item = QTreeWidgetItem([display_text])
             tree_item.setData(0, Qt.UserRole, (item.row, item.col))
 
+            # OpCode별 색상 적용 (완전 독립적 기능)
+            self._apply_opcode_color(tree_item, item)
+
             # 조건부 블록 고급 스타일 적용
             if item.is_conditional_block:
                 # 초기 상태는 모두 접힌 상태 (collapsed)
@@ -196,16 +200,8 @@ class NavigatorWidget(QWidget):
                 # 통일된 폰트 스타일 (색상 구분 최소화)
                 base_type = item.block_type.split(':')[0] if ':' in item.block_type else item.block_type
 
-                # 모든 조건부 블록에 일관된 스타일 적용
-                tree_item.setForeground(0, QColor(60, 60, 60))  # 진한 회색으로 통일
-
-                # 조건부 블록은 굵은 글씨로 구분
-                font = tree_item.font(0)
-                font.setBold(True)
-                tree_item.setFont(0, font)
-            else:
-                # 일반 아이템 스타일
-                tree_item.setForeground(0, QColor(33, 33, 33))  # 기본 검정
+                # 조건부 블록은 진한 회색으로 표시 (OpCode 색상보다 우선)
+                tree_item.setForeground(0, QColor(60, 60, 60))
 
             # 계층 레벨에 따른 부모-자식 관계 설정 (개선된 로직)
             if item.level == 0:
@@ -251,6 +247,39 @@ class NavigatorWidget(QWidget):
                     for level in levels_to_remove:
                         del level_parents[level]
     
+    def _apply_opcode_color(self, tree_item, nav_item):
+        """
+        OpCode별 색상 적용 (완전 독립적 기능)
+
+        Args:
+            tree_item: QTreeWidgetItem
+            nav_item: NavigatorItem
+        """
+        try:
+            # OpCode 추출 (안전한 방식)
+            opcode_text = getattr(nav_item, 'opcode', None)
+            if not opcode_text:
+                # 기본 색상 적용
+                tree_item.setForeground(0, QColor(33, 33, 33))  # 기본 검정
+                return
+
+            # OpCode 매핑에서 색상 찾기
+            if opcode_text in OPCODE_MAPPING:
+                opcode_enum = OPCODE_MAPPING[opcode_text]
+                if opcode_enum in OPCODE_COLORS:
+                    color = OPCODE_COLORS[opcode_enum]
+                    # 전경색으로 적용 (배경색 대신)
+                    tree_item.setForeground(0, color)
+                    return
+
+            # 매핑되지 않은 OpCode는 기본 색상
+            tree_item.setForeground(0, QColor(33, 33, 33))  # 기본 검정
+
+        except Exception as e:
+            # 색상 적용 실패 시에도 Navigator 기능에 영향 없도록 예외 처리
+            tree_item.setForeground(0, QColor(33, 33, 33))  # 기본 검정
+            # 로그는 출력하지 않음 (사용자에게 불필요한 정보)
+
     def _on_item_clicked(self, item, _column):
         """아이템 클릭 처리"""
         data = item.data(0, Qt.UserRole)
