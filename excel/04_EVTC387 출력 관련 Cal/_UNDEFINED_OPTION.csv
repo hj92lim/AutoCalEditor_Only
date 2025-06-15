@@ -1,0 +1,12 @@
+﻿Unnamed: 0,Unnamed: 1,Unnamed: 2,Unnamed: 3,Unnamed: 4,Unnamed: 5,Unnamed: 6,Unnamed: 7,Unnamed: 8,Unnamed: 9,Unnamed: 10,Unnamed: 11,Unnamed: 12,Unnamed: 13,Unnamed: 14,Unnamed: 15,Unnamed: 16,Unnamed: 17,Unnamed: 18
+,POWER CAL 사양서,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,
+,,,,프로젝트명,,_POWER_CAL_VERSION,,,_UNDEFINED_OPTION,,,,,,,,,
+,,,,,,,,,,,,,,,Cal영역,주석,맵크기선언,각종 주석 및 선언
+,,,,,,,,,,,,,,,변경가능,변경가능,변경불가,변경불가
+,OpCode,Keyword,Type,Name,,,,Value,Description,,,,,,,,,
+,$TITLE,CAL data,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,
+,$CODE,,,#error undefined _POWER_CAL_VERSION MACRO (check #define!!),,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,
+,$TITLE,END,,,,,,,,,,,,,,,,

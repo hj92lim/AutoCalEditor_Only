@@ -1,0 +1,13 @@
+﻿Unnamed: 0,Unnamed: 1,Unnamed: 2,Unnamed: 3,Unnamed: 4,Unnamed: 5,Unnamed: 6,Unnamed: 7,Unnamed: 8,Unnamed: 9,Unnamed: 10,Unnamed: 11,Unnamed: 12,Unnamed: 13,Unnamed: 14,Unnamed: 15
+,프로젝트별 전류제어용 Cal 사양,,,,,,,,,,,,,,프로젝트 관리로
+,,,,,,,,,,,,,,,
+,,,,,프로젝트명,,_PROJECT_NAME,,,DEFAULT,,,,,
+,,,,,,,,,,,,,,,
+,OpCode,Keyword,Type,이력 정리,Name,,,,Value,Description,,,,,
+,$TITLE_H,DEFINES,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,$DESCRIPT,,,,프로젝트 미선언 Error 삭제 (헤더 세분화 실시),,,,,,,,,,
+,$DESCRIPT,,,,DEFAULT 선언 Excel 시트 작성 금지!,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,$TITLE,END,,,,,,,,,,,,,

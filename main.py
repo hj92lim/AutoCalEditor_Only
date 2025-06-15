@@ -385,6 +385,7 @@ class DBExcelEditor(QMainWindow):
         # 현재 선택된 파일/시트 정보
         self.current_file_id: Optional[int] = None
         self.current_sheet_id: Optional[int] = None
+        self._initial_load_complete = False  # 초기 로드 완료 플래그
 
         # 프로젝트 루트 디렉토리 설정
         self.project_root = os.getcwd()
@@ -435,6 +436,9 @@ class DBExcelEditor(QMainWindow):
             # Git 관리자 초기화 완료 후 브랜치 목록 초기화
             if hasattr(self, 'branch_combo'):
                 self.refresh_branches()
+
+            # 초기 로드 완료 플래그 설정
+            self._initial_load_complete = True
 
             return True
 
@@ -538,7 +542,19 @@ class DBExcelEditor(QMainWindow):
         # TreeViewModel의 이름 변경 시그널을 메인 윈도우의 슬롯에 직접 연결
         self.tree_view.model.file_renamed.connect(self.on_file_renamed)
         self.tree_view.model.sheet_renamed.connect(self.on_sheet_renamed)
-        left_layout.addWidget(self.tree_view)
+
+        # 네비게이터 통합 (기존 기능 무손상)
+        navigator_splitter = QSplitter(Qt.Vertical)
+        navigator_splitter.addWidget(self.tree_view)
+
+        # 네비게이터 위젯 추가
+        from navigator import NavigatorWidget
+        self.navigator = NavigatorWidget()
+        self.navigator.item_clicked.connect(self._on_navigator_clicked)
+        navigator_splitter.addWidget(self.navigator)
+        navigator_splitter.setSizes([300, 500])  # TreeView:Navigator = 3:5 (Navigator가 더 큰 비율)
+
+        left_layout.addWidget(navigator_splitter)
 
         # --- 오른쪽 패널 (그리드뷰) ---
         right_panel = QWidget()
@@ -1402,6 +1418,9 @@ class DBExcelEditor(QMainWindow):
             # 시트 레이블 업데이트
             self.sheet_label.setText(f"현재 시트: {sheet_name}")
 
+            # 네비게이터 업데이트 (기존 DB 핸들러 활용)
+            self._update_navigator(sheet_id)
+
             self.statusBar.showMessage(f"시트 '{sheet_name}' 로드 완료")
         except Exception as e:
             error_msg = f"시트 데이터 로드 중 오류 발생 (Sheet ID: {sheet_id}): {str(e)}"
@@ -1409,6 +1428,26 @@ class DBExcelEditor(QMainWindow):
             QMessageBox.critical(self, "시트 로드 오류", error_msg)
             self.grid_view.clear_view() # 오류 시 그리드뷰 비우기
             self.sheet_label.setText(f"시트 '{sheet_name}' 로드 실패")
+
+    def _update_navigator(self, sheet_id: int):
+        """네비게이터 업데이트 (기존 DB 핸들러 활용)"""
+        try:
+            if hasattr(self, 'navigator') and self.db:
+                sheet_data = self.db.get_sheet_data(sheet_id)
+                self.navigator.populate_from_data(sheet_data)
+        except Exception as e:
+            logging.warning(f"네비게이터 업데이트 실패: {e}")
+
+    def _on_navigator_clicked(self, row: int, col: int):
+        """네비게이터 클릭 처리 (기존 그리드뷰 활용)"""
+        try:
+            if hasattr(self, 'grid_view'):
+                # 기존 그리드뷰의 스크롤/하이라이트 기능 활용
+                self.grid_view.scroll_to_cell(row, col)
+                self.grid_view.select_cell(row, col)
+                logging.info(f"Navigator clicked: scrolled to ({row}, {col})")
+        except Exception as e:
+            logging.warning(f"네비게이터 클릭 처리 실패: {e}")
 
     def setup_db_connection(self, db_file_path: str, operation_name: str = "초기화") -> bool:
         """
@@ -4006,7 +4045,7 @@ class DBExcelEditor(QMainWindow):
                     text=True,
                     encoding='utf-8',
                     errors='replace',
-                    timeout=CodeGenerationConstants.GIT_COMMAND_TIMEOUT
+                    timeout=GitConstants.GIT_COMMAND_TIMEOUT
                 )
                 if result.returncode == 0:
                     branch_name = result.stdout.strip()
@@ -4015,7 +4054,11 @@ class DBExcelEditor(QMainWindow):
                     logging.warning(f"Git 명령어 실행 실패: {result.stderr}")
                     return 'main'
         except Exception as e:
-            logging.warning(f"브랜치 정보 가져오기 실패: {e}")
+            # 초기 로드 시에는 debug 레벨로, 이후 실제 문제 시에만 warning
+            if hasattr(self, '_initial_load_complete') and self._initial_load_complete:
+                logging.warning(f"브랜치 정보 가져오기 실패: {e}")
+            else:
+                logging.debug(f"초기 브랜치 정보 가져오기 실패 (정상): {e}")
             return 'main'
 
     def _find_git_executable_fallback(self) -> str:
@@ -4760,7 +4803,7 @@ def main():
     logging.info("=========================================")
     logging.info(f"Starting {Info.APP_NAME} Application v{Info.APP_VERSION}")
     if OPTIMIZED_PROCESSING_AVAILABLE:
-        logging.info("🚀 성능 최적화 적용 버전 (61.1% 성능 향상)")
+        logging.debug("🚀 성능 최적화 적용 버전 (61.1% 성능 향상)")
     logging.info(f"Python version: {sys.version}")
     logging.info(f"PySide6 version: {PySide6.__version__}") # PySide6 임포트 필요
     logging.info("=========================================")
@@ -4779,12 +4822,12 @@ except ImportError:
 # ---------------------------------
 
 if __name__ == "__main__":
-    # 성능 최적화 상태 확인
+    # 성능 최적화 상태 확인 (조용한 실행)
     if OPTIMIZED_PROCESSING_AVAILABLE:
-        logging.info("✅ 성능 최적화 프로세서가 사용 가능합니다.")
-        print("🚀 성능 최적화 활성화: 61.1% 성능 향상 적용")
+        logging.debug("✅ 성능 최적화 프로세서가 사용 가능합니다.")
+        # 🚀 성능 최적화: 시작 메시지 제거 (조용한 실행)
     else:
-        logging.warning("⚠️ 최적화된 프로세서를 사용할 수 없습니다. 기본 기능으로 작동합니다.")
-        print("⚠️ 최적화 기능 없이 기본 기능으로 작동합니다.")
+        logging.debug("⚠️ 최적화된 프로세서를 사용할 수 없습니다. 기본 기능으로 작동합니다.")
+        # 기본 기능 메시지도 제거
 
     main()

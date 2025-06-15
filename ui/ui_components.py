@@ -1752,6 +1752,28 @@ class ExcelGridView(QTableView):
             for col in range(self.model.columnCount()):
                 self.setColumnWidth(col, col_width)
 
+    def scroll_to_cell(self, row: int, col: int):
+        """네비게이터용 셀 스크롤 메서드"""
+        try:
+            if self.model and 0 <= row < self.model.rowCount() and 0 <= col < self.model.columnCount():
+                index = self.model.index(row, col)
+                if index.isValid():
+                    self.scrollTo(index, QAbstractItemView.PositionAtTop)
+                    logging.debug(f"Scrolled to cell ({row}, {col})")
+        except Exception as e:
+            logging.warning(f"스크롤 실패: {e}")
+
+    def select_cell(self, row: int, col: int):
+        """네비게이터용 셀 선택 메서드"""
+        try:
+            if self.model and 0 <= row < self.model.rowCount() and 0 <= col < self.model.columnCount():
+                index = self.model.index(row, col)
+                if index.isValid():
+                    self.setCurrentIndex(index)
+                    logging.debug(f"Selected cell ({row}, {col})")
+        except Exception as e:
+            logging.warning(f"셀 선택 실패: {e}")
+
 class TreeViewModel(QStandardItemModel):
     """트리 뷰 모델 클래스"""
 
