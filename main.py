@@ -1132,6 +1132,16 @@ class DBExcelEditor(QMainWindow):
         generate_action.triggered.connect(self.generate_code)
         code_menu.addAction(generate_action)
 
+        # --- 디버그 메뉴 ---
+        debug_menu = menu_bar.addMenu("디버그(&D)")
+
+        # Navigator 계층구조 추출 액션
+        export_navigator_action = QAction("Navigator 계층구조 추출(&N)...", self)
+        export_navigator_action.setShortcut(QKeySequence("Ctrl+Shift+N"))
+        export_navigator_action.setStatusTip("현재 Navigator의 계층구조를 텍스트 파일로 저장합니다.")
+        export_navigator_action.triggered.connect(self.export_navigator_hierarchy)
+        debug_menu.addAction(export_navigator_action)
+
 
 
         # --- 도움말 메뉴 ---
@@ -1449,6 +1459,53 @@ class DBExcelEditor(QMainWindow):
         except Exception as e:
             logging.warning(f"네비게이터 클릭 처리 실패: {e}")
 
+    def export_navigator_hierarchy(self):
+        """Navigator 계층구조를 텍스트 파일로 추출"""
+        try:
+            if not hasattr(self, 'navigator'):
+                QMessageBox.warning(self, "경고", "Navigator가 초기화되지 않았습니다.")
+                return
+
+            # 현재 시트 정보 확인
+            if not self.current_sheet_id:
+                QMessageBox.warning(self, "경고", "현재 선택된 시트가 없습니다.\n시트를 선택한 후 다시 시도해주세요.")
+                return
+
+            # 파일 저장 대화상자
+            from PySide6.QtWidgets import QFileDialog
+            from datetime import datetime
+
+            # 기본 파일명 생성
+            current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_filename = f"navigator_hierarchy_{current_time}.txt"
+
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Navigator 계층구조 저장",
+                default_filename,
+                "텍스트 파일 (*.txt);;모든 파일 (*.*)"
+            )
+
+            if file_path:
+                # Navigator 계층구조 추출
+                hierarchy_text = self.navigator.export_hierarchy_debug_info(file_path)
+
+                # 성공 메시지
+                QMessageBox.information(
+                    self,
+                    "추출 완료",
+                    f"Navigator 계층구조가 성공적으로 저장되었습니다:\n{file_path}\n\n"
+                    f"총 {self.navigator._count_all_items()}개 아이템이 추출되었습니다."
+                )
+
+                # 로그 기록
+                logging.info(f"Navigator 계층구조 추출 완료: {file_path}")
+
+        except Exception as e:
+            error_msg = f"Navigator 계층구조 추출 중 오류 발생: {str(e)}"
+            logging.error(error_msg)
+            QMessageBox.critical(self, "오류", error_msg)
+
     def setup_db_connection(self, db_file_path: str, operation_name: str = "초기화") -> bool:
         """
         DB 연결 및 관련 객체 초기화를 위한 공통 메서드
@@ -1498,7 +1555,7 @@ class DBExcelEditor(QMainWindow):
 
     def setup_new_db_connection(self, db_file_path: str, operation_name: str) -> bool:
         """
-        새 DB 파일 생성 및 연결 (Excel 가져오기용)
+        새 DB 파일 생성 및 연결 (Excel 가져오기용, 새로운 중복 처리 정책 적용)
 
         Args:
             db_file_path: 생성할 DB 파일 경로
@@ -1512,11 +1569,64 @@ class DBExcelEditor(QMainWindow):
             self.statusBar.showMessage(f"새 DB {operation_name} 중...")
             QApplication.processEvents()  # 상태 메시지 업데이트 강제
 
-            # DBManager를 통해 새 DB 생성 및 추가
-            db_name = self.db_manager.create_and_add_database(db_file_path)
+            # 🔧 새로운 정책: Excel 변환 시 중복 처리
+            conflicts = self.db_manager.check_database_conflicts(db_file_path)
+
+            if conflicts['path_conflict']:
+                # 동일한 파일 경로의 DB가 이미 열려있음
+                existing_db_name = conflicts['path_conflict']
+                reply = QMessageBox.question(
+                    self, "기존 DB 파일 발견",
+                    f"'{os.path.basename(db_file_path)}' 파일은 이미 '{existing_db_name}' 이름으로 열려있습니다.\n\n"
+                    f"기존 DB를 닫고 Excel 데이터로 새로 생성하시겠습니까?\n"
+                    f"(기존 데이터는 모두 삭제되고 Excel 데이터로 대체됩니다)",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes
+                )
+
+                if reply == QMessageBox.Yes:
+                    # 기존 DB를 닫고 새로 생성
+                    try:
+                        db_name = self.db_manager.safe_reload_database(db_file_path, existing_db_name)
+                        self.update_current_db_references()
+                        logging.info(f"✅ Excel 변환을 위한 DB 재생성: {existing_db_name} -> {db_name}")
+                        return True
+                    except Exception as reload_error:
+                        error_msg = f"DB 재생성 실패: {str(reload_error)}"
+                        logging.error(error_msg)
+                        QMessageBox.critical(self, "DB 재생성 오류", error_msg)
+                        return False
+                else:
+                    return False  # 취소
+
+            elif conflicts['name_conflict']:
+                # 동일한 이름의 DB가 이미 존재함 (다른 파일)
+                existing_name = conflicts['proposed_name']
+                reply = QMessageBox.question(
+                    self, "동일한 이름의 DB 존재",
+                    f"'{existing_name}' 이름의 데이터베이스가 이미 열려있습니다.\n"
+                    f"(다른 파일: {self.db_manager.db_file_paths.get(existing_name, '알 수 없음')})\n\n"
+                    f"새 DB를 생성하면 기존 DB가 닫힙니다.\n"
+                    f"계속하시겠습니까?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+
+                if reply == QMessageBox.Yes:
+                    # 기존 DB 제거 후 새 DB 생성
+                    self.db_manager.remove_database(existing_name)
+                    db_name = self.db_manager.create_and_add_database(db_file_path, force_add=True)
+                    logging.info(f"✅ 기존 DB 교체 후 새 DB 생성: {existing_name} → {db_name}")
+                else:
+                    return False  # 취소
+            else:
+                # 중복 없음 - 새 DB 생성
+                db_name = self.db_manager.create_and_add_database(db_file_path)
+                logging.info(f"✅ 새 DB 생성 완료: {db_name}")
 
             # 현재 활성 DB로 설정
-            self.db_manager.switch_database(db_name)
+            if 'db_name' in locals():
+                self.db_manager.switch_database(db_name)
 
             # 기존 코드 호환성을 위해 현재 DB 참조 업데이트
             self.update_current_db_references()
@@ -1533,6 +1643,13 @@ class DBExcelEditor(QMainWindow):
 
             return True
 
+        except ValueError as ve:
+            # 중복 DB 오류 처리
+            error_msg = f"DB {operation_name} 실패: {str(ve)}"
+            logging.error(error_msg)
+            QMessageBox.warning(self, f"{operation_name} 경고", str(ve))
+            self.statusBar.showMessage(f"DB {operation_name} 취소")
+            return False
         except Exception as e:
             error_msg = f"새 DB {operation_name} 중 오류 발생: {str(e)}"
             logging.error(f"{error_msg}\n{traceback.format_exc()}")
@@ -1906,14 +2023,71 @@ class DBExcelEditor(QMainWindow):
                 # 단일 파일 처리 (기존 DB 유지하고 추가)
                 db_file_path = db_file_paths[0]
                 try:
-                    # DBManager를 통해 DB 추가 (기존 DB 유지)
-                    db_name = self.db_manager.add_database(db_file_path, replace_existing=False)
-                    logging.info(f"🔄 DB 추가 완료: {db_name}")
+                    # 🔧 새로운 정책: 통합된 중복 처리
+                    conflicts = self.db_manager.check_database_conflicts(db_file_path)
 
-                    # 새로 추가된 DB를 현재 활성 DB로 전환
-                    switch_success = self.db_manager.switch_database(db_name)
-                    logging.info(f"🔄 DB 전환 시도: {db_name} -> 성공: {switch_success}")
-                    logging.info(f"🔄 현재 활성 DB: {self.db_manager.current_db_name}")
+                    if conflicts['path_conflict']:
+                        # 동일한 파일 경로의 DB가 이미 열려있음
+                        existing_db_name = conflicts['path_conflict']
+                        reply = QMessageBox.question(
+                            self, "동일한 DB 파일 발견",
+                            f"'{os.path.basename(db_file_path)}' 파일은 이미 '{existing_db_name}' 이름으로 열려있습니다.\n\n"
+                            f"기존 DB를 닫고 새로 다시 여시겠습니까?\n"
+                            f"(현재 DB의 모든 변경사항이 자동 저장됩니다)",
+                            QMessageBox.Yes | QMessageBox.No,
+                            QMessageBox.Yes
+                        )
+
+                        if reply == QMessageBox.Yes:
+                            # 기존 DB를 닫고 새로 로드
+                            try:
+                                db_name = self.db_manager.safe_reload_database(db_file_path, existing_db_name)
+                                logging.info(f"✅ DB 재로드 완료: {existing_db_name} -> {db_name}")
+
+                                QMessageBox.information(self, "DB 재로드 완료",
+                                                      f"'{os.path.basename(db_file_path)}' 데이터베이스를 새로 로드했습니다.\n"
+                                                      f"DB 이름: {db_name}")
+                            except Exception as reload_error:
+                                error_msg = f"DB 재로드 실패: {str(reload_error)}"
+                                logging.error(error_msg)
+                                QMessageBox.critical(self, "DB 재로드 오류", error_msg)
+                                return
+                        else:
+                            return  # 취소
+
+                    elif conflicts['name_conflict']:
+                        # 동일한 이름의 DB가 이미 존재함 (다른 파일)
+                        existing_name = conflicts['proposed_name']
+                        reply = QMessageBox.question(
+                            self, "동일한 이름의 DB 존재",
+                            f"'{existing_name}' 이름의 데이터베이스가 이미 열려있습니다.\n"
+                            f"(다른 파일: {self.db_manager.db_file_paths.get(existing_name, '알 수 없음')})\n\n"
+                            f"새 DB 파일을 열면 기존 DB가 닫힙니다.\n"
+                            f"계속하시겠습니까?",
+                            QMessageBox.Yes | QMessageBox.No,
+                            QMessageBox.No
+                        )
+
+                        if reply == QMessageBox.Yes:
+                            # 기존 DB 제거 후 새 DB 추가
+                            self.db_manager.remove_database(existing_name)
+                            db_name = self.db_manager.add_database(db_file_path, force_add=True)
+                            logging.info(f"✅ 기존 DB 교체: {existing_name} → {db_name}")
+
+                            QMessageBox.information(self, "DB 교체 완료",
+                                                  f"기존 '{existing_name}' DB를 닫고 새 DB를 열었습니다.")
+                        else:
+                            return  # 취소
+
+                    else:
+                        # 중복 없음 - 새로운 DB 추가
+                        db_name = self.db_manager.add_database(db_file_path, replace_existing=False)
+                        logging.info(f"🔄 새 DB 추가 완료: {db_name}")
+
+                        QMessageBox.information(self, "DB 열기 완료",
+                                              f"'{os.path.basename(db_file_path)}' 데이터베이스를 성공적으로 열었습니다.\n"
+                                              f"DB 이름: {db_name}\n"
+                                              f"총 {self.db_manager.get_database_count()}개 DB가 관리 중입니다.")
 
                     # 현재 DB 참조 업데이트
                     self.update_current_db_references()
@@ -1927,9 +2101,6 @@ class DBExcelEditor(QMainWindow):
                     logging.info(f"단일 DB 로드 후 드롭다운 업데이트 완료: {db_name}")
 
                     self.statusBar.showMessage(f"DB 파일 열기 완료: {os.path.basename(db_file_path)}")
-                    QMessageBox.information(self, "열기 완료",
-                                          f"'{os.path.basename(db_file_path)}' 데이터베이스를 성공적으로 열었습니다.\n"
-                                          f"총 {self.db_manager.get_database_count()}개 DB가 관리 중입니다.")
                 except Exception as e:
                     error_msg = f"DB 파일 열기 실패: {str(e)}"
                     logging.error(f"{error_msg}\n{traceback.format_exc()}")
@@ -1969,13 +2140,42 @@ class DBExcelEditor(QMainWindow):
                 try:
                     logging.info(f"다중 DB 열기 [{i+1}/{len(db_file_paths)}]: {db_file_path}")
 
-                    # DBManager를 통해 DB 추가 (자동으로 모두 추가)
-                    db_name = self.db_manager.add_database(db_file_path, replace_existing=False)
+                    # 🔧 새로운 정책: 다중 DB 처리 시 중복 체크 및 자동 처리
+                    conflicts = self.db_manager.check_database_conflicts(db_file_path)
+
+                    if conflicts['path_conflict']:
+                        # 동일한 파일 경로의 DB가 이미 열려있음 - 새로 로드
+                        existing_db_name = conflicts['path_conflict']
+                        try:
+                            db_name = self.db_manager.safe_reload_database(db_file_path, existing_db_name)
+                            logging.info(f"다중 DB 열기 - DB 재로드: {db_basename} ({existing_db_name} -> {db_name})")
+                            was_existing = True
+                        except Exception as reload_error:
+                            logging.error(f"다중 DB 열기 - 재로드 실패: {db_basename} - {reload_error}")
+                            failed_opens.append({
+                                'db_file': db_basename,
+                                'error': f"DB 재로드 실패: {str(reload_error)}"
+                            })
+                            continue
+                    elif conflicts['name_conflict']:
+                        # 동일한 이름의 DB가 이미 존재함 - 건너뛰기
+                        logging.warning(f"다중 DB 열기 - 이름 충돌로 건너뛰기: {db_basename} (기존: {conflicts['name_conflict']})")
+                        failed_opens.append({
+                            'db_file': db_basename,
+                            'error': f"동일한 이름의 DB가 이미 열려있습니다: {conflicts['name_conflict']}"
+                        })
+                        continue
+                    else:
+                        # 중복 없음 - 새로운 DB 추가
+                        db_name = self.db_manager.add_database(db_file_path, replace_existing=False, force_add=True)
+                        logging.info(f"다중 DB 열기 - 새 DB 추가: {db_basename} -> {db_name}")
+                        was_existing = False
+
                     successful_opens.append({
                         'db_file': db_basename,
-                        'db_name': db_name
+                        'db_name': db_name,
+                        'was_existing': was_existing
                     })
-                    logging.info(f"다중 DB 열기 성공: {db_basename} -> {db_name}")
 
                 except Exception as e:
                     error_msg = str(e)

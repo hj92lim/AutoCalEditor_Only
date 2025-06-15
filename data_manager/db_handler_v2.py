@@ -323,6 +323,43 @@ class DBHandlerV2:
             self.conn.rollback()
             raise
 
+    def delete_sheets_by_source_file_in_transaction(self, source_file: str) -> int:
+        """
+        특정 source_file의 모든 시트 삭제 (기존 트랜잭션 내에서 실행)
+
+        Args:
+            source_file: 원본 파일명
+
+        Returns:
+            삭제된 시트 개수
+        """
+        try:
+            # 삭제할 시트 목록 조회
+            self.cursor.execute(
+                "SELECT id, name FROM sheets WHERE source_file = ?",
+                (source_file,)
+            )
+            sheets_to_delete = self.cursor.fetchall()
+
+            if not sheets_to_delete:
+                logging.info(f"삭제할 시트가 없습니다 (source_file: '{source_file}')")
+                return 0
+
+            # 시트들 삭제 (CASCADE로 연관된 셀 데이터도 자동 삭제)
+            # 🔧 기존 트랜잭션 내에서 실행하므로 별도 트랜잭션 관리 안함
+            self.cursor.execute("DELETE FROM sheets WHERE source_file = ?", (source_file,))
+            deleted_count = self.cursor.rowcount
+
+            logging.info(f"source_file '{source_file}'의 {deleted_count}개 시트 삭제 완료 (트랜잭션 내)")
+            for sheet in sheets_to_delete:
+                logging.debug(f"  - 삭제된 시트: '{sheet[1]}' (ID: {sheet[0]})")
+
+            return deleted_count
+
+        except Exception as e:
+            logging.error(f"source_file 시트 삭제 오류 (트랜잭션 내, '{source_file}'): {e}")
+            raise  # 상위 트랜잭션에서 롤백 처리
+
     # 셀 관련 메서드들은 기존과 동일
     def set_cell_value(self, sheet_id: int, row: int, col: int, value: str) -> None:
         """셀 값 설정"""
@@ -559,6 +596,55 @@ class DBHandlerV2:
             logging.error(f"시트 {sheet_id} 셀 일괄 삽입 중 예상치 못한 오류: {e}")
             self.conn.rollback()
             raise
+
+    def batch_insert_cells_in_transaction(self, sheet_id: int, cells_data: List[Tuple[int, int, str]]) -> None:
+        """
+        다수의 셀 데이터를 일괄 삽입 (기존 트랜잭션 내에서 실행)
+
+        Args:
+            sheet_id: 시트 ID
+            cells_data: (row, col, value) 튜플의 리스트
+        """
+        if not cells_data:
+            logging.warning(f"시트 {sheet_id}: 삽입할 셀 데이터가 없습니다.")
+            return
+
+        try:
+            # 🔧 기존 트랜잭션 내에서 실행하므로 별도 트랜잭션 관리 안함
+
+            # 기존 시트 데이터 삭제
+            delete_result = self.cursor.execute("DELETE FROM cells WHERE sheet_id = ?", (sheet_id,))
+            deleted_count = delete_result.rowcount
+
+            # 새 데이터 준비 (빈 값 제외) - Cython 최적화 활성화
+            try:
+                # Cython 최적화 버전 사용 (성능 향상)
+                from cython_extensions.data_processor import fast_db_batch_processing
+                processed_cells = fast_db_batch_processing(cells_data)
+                data = [(sheet_id, row, col, value) for row, col, value in processed_cells]
+            except ImportError:
+                # Python 폴백
+                data = []
+                for row, col, value in cells_data:
+                    if value is not None and str(value).strip():  # 빈 문자열과 None 제외
+                        data.append((sheet_id, row, col, str(value)))
+
+            # 새 데이터 일괄 삽입
+            if data:
+                self.cursor.executemany(
+                    "INSERT INTO cells (sheet_id, row, col, value) VALUES (?, ?, ?, ?)",
+                    data
+                )
+                logging.info(f"시트 {sheet_id}: {len(data)}개 셀 일괄 삽입 완료 (트랜잭션 내, 원본: {len(cells_data)}개)")
+            else:
+                logging.warning(f"시트 {sheet_id}: 유효한 데이터가 없어 삽입하지 않음")
+
+        except sqlite3.Error as e:
+            logging.error(f"시트 {sheet_id} 셀 일괄 삽입 오류 (트랜잭션 내): {e}")
+            raise  # 상위 트랜잭션에서 롤백 처리
+        except Exception as e:
+            logging.error(f"시트 {sheet_id} 셀 일괄 삽입 중 예상치 못한 오류 (트랜잭션 내): {e}")
+            raise  # 상위 트랜잭션에서 롤백 처리
 
     def clear_sheet(self, sheet_id: int) -> None:
         """
