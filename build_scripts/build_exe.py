@@ -277,11 +277,11 @@ def build_executable():
 def check_pyinstaller():
     """Check if PyInstaller is available"""
     try:
-        import PyInstaller
+        import PyInstaller  # Correct import name (capital P and I)
         logging.info(f"PyInstaller available: {PyInstaller.__version__}")
         return True
     except ImportError:
-        logging.error("PyInstaller not found. Install with: pip install PyInstaller")
+        logging.error("PyInstaller not found. Install with: pip install pyinstaller")
         return False
 
 def main():

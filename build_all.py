@@ -126,21 +126,24 @@ def check_dependencies():
     """Check required dependencies before build"""
     logging.info("Checking build dependencies...")
 
+    # Correct import names for each package
     required_modules = {
-        'PyInstaller': 'pip install PyInstaller',
-        'PySide6': 'pip install PySide6',
-        'numpy': 'pip install numpy',
-        'openpyxl': 'pip install openpyxl'
+        'PyInstaller': ('PyInstaller', 'pip install pyinstaller'),  # Package: pyinstaller, Import: PyInstaller
+        'PySide6': ('PySide6', 'pip install PySide6'),
+        'numpy': ('numpy', 'pip install numpy'),
+        'openpyxl': ('openpyxl', 'pip install openpyxl')
     }
 
     missing = []
-    for module, install_cmd in required_modules.items():
+    for display_name, (import_name, install_cmd) in required_modules.items():
         try:
-            __import__(module.lower() if module == 'PyInstaller' else module)
-            logging.info(f"✓ {module}: Available")
-        except ImportError:
-            logging.error(f"✗ {module}: Missing")
-            missing.append((module, install_cmd))
+            module = __import__(import_name)
+            # Try to get version if available
+            version = getattr(module, '__version__', 'unknown')
+            logging.info(f"✓ {display_name}: Available (v{version})")
+        except ImportError as e:
+            logging.error(f"✗ {display_name}: Missing - {e}")
+            missing.append((display_name, install_cmd))
 
     if missing:
         logging.error("Missing required dependencies:")

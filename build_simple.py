@@ -117,16 +117,22 @@ def build_with_pyinstaller():
 
 def check_dependencies():
     """Check required dependencies"""
-    required = ['PyInstaller', 'PySide6', 'numpy', 'openpyxl']
+    # Correct import names: package name vs import name can be different
+    required = {
+        'PyInstaller': 'PyInstaller',  # pip install pyinstaller, import PyInstaller
+        'PySide6': 'PySide6',
+        'numpy': 'numpy',
+        'openpyxl': 'openpyxl'
+    }
     missing = []
 
-    for module in required:
+    for display_name, import_name in required.items():
         try:
-            __import__(module.lower() if module == 'PyInstaller' else module)
-            logging.info(f"✓ {module}")
+            __import__(import_name)
+            logging.info(f"✓ {display_name}")
         except ImportError:
-            logging.error(f"✗ {module}")
-            missing.append(module)
+            logging.error(f"✗ {display_name}")
+            missing.append(display_name)
 
     if missing:
         logging.error(f"Missing: {', '.join(missing)}")
