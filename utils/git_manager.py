@@ -11,12 +11,34 @@ import logging
 import subprocess
 import shutil
 import re
+import sys
 from datetime import datetime
 from typing import Dict, List
 from pathlib import Path
 
 # 중앙 집중식 상수 관리 모듈 import
 from core.constants import GitConstants, DatabaseConstants
+
+# Windows 콘솔창 숨김을 위한 subprocess 설정
+def get_subprocess_kwargs_for_git():
+    """Git 명령어용 subprocess 설정 (콘솔창 숨김)"""
+    kwargs = {
+        'encoding': 'utf-8',
+        'errors': 'replace',
+        'timeout': 30
+    }
+
+    # Windows에서 콘솔창 숨김 설정
+    if sys.platform == "win32":
+        kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+
+        # 환경변수 설정
+        env = os.environ.copy()
+        env['PYTHONIOENCODING'] = 'utf-8'
+        env['PYTHONUTF8'] = '1'
+        kwargs['env'] = env
+
+    return kwargs
 
 
 class GitManager:
@@ -65,11 +87,10 @@ class GitManager:
                 if os.path.exists(path):
                     return path
 
-            # where 명령어로 찾기 시도
+            # where 명령어로 찾기 시도 (콘솔창 숨김)
             try:
-                result = subprocess.run(['where', 'git'],
-                                      capture_output=True, text=True, check=True,
-                                      encoding='utf-8', errors='replace')
+                kwargs = get_subprocess_kwargs_for_git()
+                result = subprocess.run(['where', 'git'], capture_output=True, text=True, check=True, **kwargs)
                 git_path = result.stdout.strip().split('\n')[0]
                 if os.path.exists(git_path):
                     return git_path

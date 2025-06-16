@@ -207,13 +207,16 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,  # --noconsole
+    console=False,  # --noconsole (콘솔창 완전 숨김)
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
     icon='icon.ico' if Path('icon.ico').exists() else None,
+    # Windows에서 subprocess 콘솔창 숨김 설정
+    uac_admin=False,
+    uac_uiaccess=False,
 )
 '''
     
