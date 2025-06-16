@@ -315,11 +315,11 @@ def main():
         if not check_pyinstaller():
             return False
 
-    # Check Cython modules
-    cython_modules = find_cython_modules()
-    if not cython_modules:
-        logging.warning("Cython modules not found. Please run Cython build first.")
-        logging.info("Cython build command: python build_scripts/build_cython.py")
+        # Check Cython modules
+        cython_modules = find_cython_modules()
+        if not cython_modules:
+            logging.warning("Cython modules not found. Please run Cython build first.")
+            logging.info("Cython build command: python build_scripts/build_cython.py")
 
         # Execute build
         if build_executable():
