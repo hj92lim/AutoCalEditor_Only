@@ -17,7 +17,7 @@ build/
 
 # PyInstaller
 *.manifest
-*.spec
+# *.spec  # spec 파일은 빌드 설정이므로 버전 관리에 포함
 
 # ===== Cython 빌드 결과물 =====
 # Cython이 생성하는 C 코드 파일들
