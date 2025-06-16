@@ -29,16 +29,20 @@ def run_cython_build():
     logging.info("Step 1: Building Cython modules")
 
     try:
-        # Windows encoding fix: UTF-8 forced setting
+        # Windows encoding fix: UTF-8 forced setting with timeout
         result = subprocess.run([
             sys.executable, 'build_scripts/build_cython.py'
-        ], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True)
+        ], capture_output=True, text=True, encoding='utf-8', errors='replace',
+        timeout=300, check=True)  # 5 minute timeout
 
         logging.info("Cython build successful")
         if result.stdout:
             logging.debug(f"Cython build output: {result.stdout}")
         return True
 
+    except subprocess.TimeoutExpired:
+        logging.error("Cython build timeout (5 minutes)")
+        return False
     except subprocess.CalledProcessError as e:
         logging.error(f"Cython build failed: {e}")
         if e.stderr:
@@ -51,27 +55,36 @@ def run_cython_build():
         return False
 
 def run_pyinstaller_build():
-    """Build PyInstaller executable"""
+    """Build PyInstaller executable with real-time output"""
     logging.info("Step 2: Building PyInstaller executable")
 
     try:
-        # Windows encoding fix: UTF-8 forced setting
-        result = subprocess.run([
+        # Use Popen for real-time output instead of run()
+        env = os.environ.copy()
+        env['PYTHONIOENCODING'] = 'utf-8'
+
+        process = subprocess.Popen([
             sys.executable, 'build_scripts/build_exe.py'
-        ], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True)
+        ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding='utf-8', errors='replace', env=env)
 
-        logging.info("PyInstaller build successful")
-        if result.stdout:
-            logging.debug(f"PyInstaller build output: {result.stdout}")
-        return True
+        # Real-time output
+        while True:
+            output = process.stdout.readline()
+            if output == '' and process.poll() is not None:
+                break
+            if output:
+                print(output.strip())
 
-    except subprocess.CalledProcessError as e:
-        logging.error(f"PyInstaller build failed: {e}")
-        if e.stderr:
-            logging.error(f"Error output: {e.stderr}")
-        if e.stdout:
-            logging.error(f"Standard output: {e.stdout}")
-        return False
+        return_code = process.poll()
+
+        if return_code == 0:
+            logging.info("PyInstaller build successful")
+            return True
+        else:
+            logging.error(f"PyInstaller build failed with return code: {return_code}")
+            return False
+
     except Exception as e:
         logging.error(f"Exception during PyInstaller build: {e}")
         return False
