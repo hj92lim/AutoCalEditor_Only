@@ -1,0 +1,31 @@
+# AutoCalEditor Nuitka 컴파일 의존성 (Windows 최적화)
+
+# Nuitka 컴파일러 (최신 버전)
+nuitka>=2.7.0
+
+# GUI Framework
+PySide6>=6.5.0
+
+# Database (sqlite3는 Python 표준 라이브러리)
+
+# Excel Processing
+openpyxl>=3.1.0
+xlwings>=0.30.0
+pywin32>=306  # Windows Excel COM interface (필수)
+
+# Numerical Computing
+numpy>=1.24.0
+
+# Cython (성능 최적화 - 필수)
+Cython>=3.0.0
+
+# Utilities
+pathlib2>=2.3.7  # Python 3.4+ 호환성
+
+# Nuitka 플러그인 지원
+zstandard>=0.15  # Nuitka 압축 지원
+ordered-set>=4.1.0  # Nuitka 내부 의존성
+
+# Windows 전용 추가 의존성
+comtypes>=1.1.14  # COM 인터페이스 지원
+pypiwin32>=223  # Windows API 지원
