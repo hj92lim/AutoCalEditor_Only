@@ -115,12 +115,34 @@ def build_with_pyinstaller():
         logging.error(f"Build error: {e}")
         return False
 
+def check_dependencies():
+    """Check required dependencies"""
+    required = ['PyInstaller', 'PySide6', 'numpy', 'openpyxl']
+    missing = []
+
+    for module in required:
+        try:
+            __import__(module.lower() if module == 'PyInstaller' else module)
+            logging.info(f"✓ {module}")
+        except ImportError:
+            logging.error(f"✗ {module}")
+            missing.append(module)
+
+    if missing:
+        logging.error(f"Missing: {', '.join(missing)}")
+        logging.error("Install with: pip install " + " ".join(missing))
+        return False
+    return True
+
 def main():
     """Main build function"""
     logging.info("Simple AutoCalEditor build started")
-    
+
     if not os.path.exists('main.py'):
         logging.error("main.py not found. Run from project root.")
+        return False
+
+    if not check_dependencies():
         return False
     
     if build_with_pyinstaller():

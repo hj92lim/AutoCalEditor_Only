@@ -122,6 +122,35 @@ def verify_build_result():
         logging.error("Executable file was not created.")
         return False
 
+def check_dependencies():
+    """Check required dependencies before build"""
+    logging.info("Checking build dependencies...")
+
+    required_modules = {
+        'PyInstaller': 'pip install PyInstaller',
+        'PySide6': 'pip install PySide6',
+        'numpy': 'pip install numpy',
+        'openpyxl': 'pip install openpyxl'
+    }
+
+    missing = []
+    for module, install_cmd in required_modules.items():
+        try:
+            __import__(module.lower() if module == 'PyInstaller' else module)
+            logging.info(f"✓ {module}: Available")
+        except ImportError:
+            logging.error(f"✗ {module}: Missing")
+            missing.append((module, install_cmd))
+
+    if missing:
+        logging.error("Missing required dependencies:")
+        for module, cmd in missing:
+            logging.error(f"  {module}: {cmd}")
+        return False
+
+    logging.info("All dependencies available")
+    return True
+
 def main():
     """Main build process"""
     logging.info("AutoCalEditor complete build started")
@@ -130,6 +159,11 @@ def main():
     # Check project root
     if not os.path.exists('main.py'):
         logging.error("main.py not found. Please run from project root.")
+        return False
+
+    # Check dependencies first
+    if not check_dependencies():
+        logging.error("Dependency check failed. Please install missing packages.")
         return False
 
     # Step 1: Cython build

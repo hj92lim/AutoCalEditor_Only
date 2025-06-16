@@ -274,6 +274,16 @@ def build_executable():
         logging.error(f"Exception occurred during build: {e}")
         return False
 
+def check_pyinstaller():
+    """Check if PyInstaller is available"""
+    try:
+        import PyInstaller
+        logging.info(f"PyInstaller available: {PyInstaller.__version__}")
+        return True
+    except ImportError:
+        logging.error("PyInstaller not found. Install with: pip install PyInstaller")
+        return False
+
 def main():
     """Main build function"""
     logging.info("AutoCalEditor build started")
@@ -281,6 +291,10 @@ def main():
     # Check current directory
     if not os.path.exists('main.py'):
         logging.error("main.py file not found. Please run from project root.")
+        return False
+
+    # Check PyInstaller availability
+    if not check_pyinstaller():
         return False
 
     # Check Cython modules
