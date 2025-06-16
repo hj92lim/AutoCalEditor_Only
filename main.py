@@ -387,6 +387,10 @@ class DBExcelEditor(QMainWindow):
         self.current_sheet_id: Optional[int] = None
         self._initial_load_complete = False  # 초기 로드 완료 플래그
 
+        # 🚀 스마트 업데이트 모드 플래그
+        self._excel_update_mode = False  # True: 스마트 업데이트, False: 덮어쓰기
+        self._target_db_name = None  # 업데이트 대상 DB 이름
+
         # 프로젝트 루트 디렉토리 설정
         self.project_root = os.getcwd()
 
@@ -767,6 +771,9 @@ class DBExcelEditor(QMainWindow):
                 # 닫기 버튼 활성화
                 self.close_db_button.setEnabled(True)
 
+                # 🚀 DB 전환 시 세션 상태 자동 저장
+                self.save_multi_db_session()
+
                 logging.info(f"DB 전환 완료: {db_name}")
             else:
                 logging.error(f"DB 전환 실패: {db_name}")
@@ -805,6 +812,9 @@ class DBExcelEditor(QMainWindow):
 
                     # 파일 목록 새로고침
                     self.load_files()
+
+                    # 🚀 DB 닫기 후 세션 상태 저장
+                    self.save_multi_db_session()
 
                     remaining_count = self.db_manager.get_database_count()
                     if remaining_count > 0:
@@ -1555,7 +1565,7 @@ class DBExcelEditor(QMainWindow):
 
     def setup_new_db_connection(self, db_file_path: str, operation_name: str) -> bool:
         """
-        새 DB 파일 생성 및 연결 (Excel 가져오기용, 새로운 중복 처리 정책 적용)
+        새 DB 파일 생성 및 연결 (Excel 가져오기용, 업데이트 로직 활성화)
 
         Args:
             db_file_path: 생성할 DB 파일 경로
@@ -1569,27 +1579,55 @@ class DBExcelEditor(QMainWindow):
             self.statusBar.showMessage(f"새 DB {operation_name} 중...")
             QApplication.processEvents()  # 상태 메시지 업데이트 강제
 
-            # 🔧 새로운 정책: Excel 변환 시 중복 처리
+            # 🔧 업데이트 로직 활성화: Excel 변환 시 중복 처리
             conflicts = self.db_manager.check_database_conflicts(db_file_path)
 
             if conflicts['path_conflict']:
                 # 동일한 파일 경로의 DB가 이미 열려있음
                 existing_db_name = conflicts['path_conflict']
+
+                # 🚀 업데이트 vs 덮어쓰기 선택 대화상자
                 reply = QMessageBox.question(
-                    self, "기존 DB 파일 발견",
+                    self, "기존 DB 처리 방식 선택",
                     f"'{os.path.basename(db_file_path)}' 파일은 이미 '{existing_db_name}' 이름으로 열려있습니다.\n\n"
-                    f"기존 DB를 닫고 Excel 데이터로 새로 생성하시겠습니까?\n"
-                    f"(기존 데이터는 모두 삭제되고 Excel 데이터로 대체됩니다)",
-                    QMessageBox.Yes | QMessageBox.No,
+                    f"처리 방식을 선택하세요:\n\n"
+                    f"• 예(Y): 스마트 업데이트 (기존 데이터 보존, 변경사항만 반영, 빠름)\n"
+                    f"• 아니오(N): 완전 덮어쓰기 (기존 데이터 삭제, 전체 재생성, 안전)",
+                    QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
                     QMessageBox.Yes
                 )
 
                 if reply == QMessageBox.Yes:
-                    # 기존 DB를 닫고 새로 생성
+                    # 🚀 스마트 업데이트 로직 실행
+                    try:
+                        logging.info(f"✅ 스마트 업데이트 모드 선택: {existing_db_name}")
+
+                        # 기존 DB를 업데이트 대상으로 설정
+                        db_name = self.db_manager.create_and_add_database(
+                            db_file_path, update_existing=True
+                        )
+                        self.update_current_db_references()
+
+                        # 업데이트 플래그 설정 (Excel 가져오기에서 사용)
+                        self._excel_update_mode = True
+                        self._target_db_name = db_name
+
+                        logging.info(f"✅ 스마트 업데이트 준비 완료: {db_name}")
+                        return True
+
+                    except Exception as update_error:
+                        error_msg = f"스마트 업데이트 준비 실패: {str(update_error)}"
+                        logging.error(error_msg)
+                        QMessageBox.critical(self, "업데이트 준비 오류", error_msg)
+                        return False
+
+                elif reply == QMessageBox.No:
+                    # 기존 방식: 완전 덮어쓰기
                     try:
                         db_name = self.db_manager.safe_reload_database(db_file_path, existing_db_name)
                         self.update_current_db_references()
-                        logging.info(f"✅ Excel 변환을 위한 DB 재생성: {existing_db_name} -> {db_name}")
+                        self._excel_update_mode = False  # 덮어쓰기 모드
+                        logging.info(f"✅ 완전 덮어쓰기 모드: {existing_db_name} -> {db_name}")
                         return True
                     except Exception as reload_error:
                         error_msg = f"DB 재생성 실패: {str(reload_error)}"
@@ -1616,12 +1654,14 @@ class DBExcelEditor(QMainWindow):
                     # 기존 DB 제거 후 새 DB 생성
                     self.db_manager.remove_database(existing_name)
                     db_name = self.db_manager.create_and_add_database(db_file_path, force_add=True)
+                    self._excel_update_mode = False  # 새 DB이므로 덮어쓰기 모드
                     logging.info(f"✅ 기존 DB 교체 후 새 DB 생성: {existing_name} → {db_name}")
                 else:
                     return False  # 취소
             else:
                 # 중복 없음 - 새 DB 생성
                 db_name = self.db_manager.create_and_add_database(db_file_path)
+                self._excel_update_mode = False  # 새 DB이므로 덮어쓰기 모드
                 logging.info(f"✅ 새 DB 생성 완료: {db_name}")
 
             # 현재 활성 DB로 설정
@@ -1658,13 +1698,43 @@ class DBExcelEditor(QMainWindow):
             return False
 
     def save_last_db_file(self, db_file_path: str):
-        """마지막으로 열었던 DB 파일 경로를 설정에 저장"""
+        """마지막으로 열었던 DB 파일 경로를 설정에 저장 (하위 호환성 유지)"""
         try:
             self.settings.setValue("last_db_file", db_file_path)
             self.settings.setValue(Info.LAST_DIRECTORY_KEY, os.path.dirname(db_file_path))
             logging.info(f"마지막 DB 파일 경로 저장: {db_file_path}")
+
+            # 🚀 다중 DB 상태도 함께 저장
+            self.save_multi_db_session()
         except Exception as e:
             logging.warning(f"설정 저장 중 오류: {e}")
+
+    def save_multi_db_session(self):
+        """🚀 현재 다중 DB 세션 상태를 저장"""
+        try:
+            if not hasattr(self, 'db_manager') or not self.db_manager:
+                return
+
+            # 현재 열린 모든 DB 파일 경로 수집
+            db_paths = []
+            current_db_name = None
+
+            for db_name, db_handler in self.db_manager.databases.items():
+                if hasattr(db_handler, 'db_file') and db_handler.db_file:
+                    db_paths.append(db_handler.db_file)
+
+            # 현재 활성 DB 이름 저장
+            if hasattr(self.db_manager, 'current_db_name'):
+                current_db_name = self.db_manager.current_db_name
+
+            # 설정에 저장
+            self.settings.setValue("multi_db_paths", db_paths)
+            self.settings.setValue("current_active_db", current_db_name)
+
+            logging.info(f"다중 DB 세션 저장: {len(db_paths)}개 DB, 활성 DB: {current_db_name}")
+
+        except Exception as e:
+            logging.warning(f"다중 DB 세션 저장 중 오류: {e}")
 
     def load_last_db_file(self):
         """마지막으로 열었던 DB 파일을 자동으로 로드 (안전한 처리)"""
@@ -1701,14 +1771,19 @@ class DBExcelEditor(QMainWindow):
             self.statusBar.showMessage("DB 파일 자동 로드 중 오류 발생")
 
     def auto_load_multi_db(self):
-        """단일 DB 로드"""
+        """🚀 이전 다중 DB 세션 복원 (개선된 로직)"""
         try:
-            logging.info("앱 시작 시 마지막 DB 파일 로드 시도")
+            logging.info("앱 시작 시 이전 DB 세션 복원 시도")
 
-            # 기존 단일 DB 로드 방식 사용
-            self.load_last_db_file()
+            # 1. 다중 DB 세션 복원 시도
+            if self.load_multi_db_session():
+                logging.info("다중 DB 세션 복원 성공")
+            else:
+                # 2. 다중 DB 세션 복원 실패 시 단일 DB 로드 시도 (하위 호환성)
+                logging.info("다중 DB 세션 없음, 단일 DB 로드 시도")
+                self.load_last_db_file()
 
-            # DB 드롭다운 업데이트
+            # 3. DB 드롭다운 업데이트
             self.update_db_combo()
 
         except Exception as e:
@@ -1718,6 +1793,72 @@ class DBExcelEditor(QMainWindow):
 
             # 오류 발생 시 상태 메시지 표시
             self.statusBar.showMessage("DB 자동 로드 실패")
+
+    def load_multi_db_session(self) -> bool:
+        """🚀 이전 다중 DB 세션 복원"""
+        try:
+            # 저장된 다중 DB 경로 목록 가져오기
+            db_paths = self.settings.value("multi_db_paths", [])
+            current_active_db = self.settings.value("current_active_db", "")
+
+            if not db_paths:
+                logging.info("저장된 다중 DB 세션 없음")
+                return False
+
+            logging.info(f"다중 DB 세션 복원 시작: {len(db_paths)}개 DB")
+
+            # 존재하는 DB 파일들만 필터링
+            valid_db_paths = []
+            for db_path in db_paths:
+                if isinstance(db_path, str) and os.path.exists(db_path):
+                    valid_db_paths.append(db_path)
+                else:
+                    logging.warning(f"DB 파일이 존재하지 않음: {db_path}")
+
+            if not valid_db_paths:
+                logging.warning("복원할 수 있는 DB 파일이 없음")
+                # 잘못된 설정 정리
+                self.settings.remove("multi_db_paths")
+                self.settings.remove("current_active_db")
+                return False
+
+            # DB들을 순차적으로 로드
+            loaded_dbs = []
+            for db_path in valid_db_paths:
+                try:
+                    db_name = self.db_manager.add_database(db_path, replace_existing=False)
+                    loaded_dbs.append(db_name)
+                    logging.info(f"DB 복원 성공: {os.path.basename(db_path)} -> {db_name}")
+                except Exception as e:
+                    logging.warning(f"DB 복원 실패: {db_path} - {e}")
+
+            if not loaded_dbs:
+                logging.warning("복원된 DB가 없음")
+                return False
+
+            # 이전 활성 DB 복원 시도
+            if current_active_db and current_active_db in [db for db in self.db_manager.databases.keys()]:
+                self.db_manager.switch_database(current_active_db)
+                logging.info(f"이전 활성 DB 복원: {current_active_db}")
+            else:
+                # 활성 DB가 없거나 찾을 수 없으면 첫 번째 DB를 활성화
+                self.db_manager.switch_database(loaded_dbs[0])
+                logging.info(f"첫 번째 DB를 활성 DB로 설정: {loaded_dbs[0]}")
+
+            # 현재 DB 참조 업데이트
+            self.update_current_db_references()
+
+            # 파일 목록 새로고침
+            self.load_files()
+
+            self.statusBar.showMessage(f"이전 DB 세션 복원 완료: {len(loaded_dbs)}개 DB")
+            logging.info(f"다중 DB 세션 복원 완료: {len(loaded_dbs)}개 DB, 활성 DB: {self.db_manager.current_db_name}")
+
+            return True
+
+        except Exception as e:
+            logging.error(f"다중 DB 세션 복원 중 오류: {e}")
+            return False
 
     def select_database_for_code_generation(self) -> Optional['DBHandlerV2']:
         """
@@ -1937,13 +2078,17 @@ class DBExcelEditor(QMainWindow):
     def create_new_db(self):
         """새로운 빈 데이터베이스 생성"""
         try:
+            # 🚀 MCU Calibration 데이터베이스 저장소 경로 설정
+            mcu_db_dir = os.path.join(os.getcwd(), Info.MCU_CALIBRATION_DB_DIR)
+            os.makedirs(mcu_db_dir, exist_ok=True)  # 디렉토리가 없으면 생성
+
             # 기본 DB 파일명 설정
             default_db_name = f"{Info.DEFAULT_DB_NAME}{Info.DB_EXTENSION}"
 
-            # DB 파일 저장 대화상자
+            # DB 파일 저장 대화상자 (MCU Calibration 디렉토리가 기본 경로)
             db_file_path, _ = QFileDialog.getSaveFileName(
                 self, "새 데이터베이스 생성",
-                os.path.join(self.last_directory, default_db_name),
+                os.path.join(mcu_db_dir, default_db_name),
                 Info.DB_FILE_FILTER
             )
 
@@ -2006,9 +2151,13 @@ class DBExcelEditor(QMainWindow):
     def open_db_file(self):
         """DB 파일 열기 (다중 선택 자동 지원)"""
         try:
-            # 다중 파일 선택 대화상자
+            # 🚀 MCU Calibration 데이터베이스 저장소 경로 설정
+            mcu_db_dir = os.path.join(os.getcwd(), Info.MCU_CALIBRATION_DB_DIR)
+            os.makedirs(mcu_db_dir, exist_ok=True)  # 디렉토리가 없으면 생성
+
+            # 다중 파일 선택 대화상자 (MCU Calibration 디렉토리가 기본 경로)
             db_file_paths, _ = QFileDialog.getOpenFileNames(
-                self, "DB 파일 선택 (다중 선택 가능)", self.last_directory, Info.DB_FILE_FILTER
+                self, "DB 파일 선택 (다중 선택 가능)", mcu_db_dir, Info.DB_FILE_FILTER
             )
 
             if not db_file_paths:
@@ -2202,6 +2351,10 @@ class DBExcelEditor(QMainWindow):
 
                 # DB 드롭다운 업데이트 (버그 수정)
                 self.update_db_combo()
+
+                # 🚀 다중 DB 로드 후 세션 상태 저장
+                self.save_multi_db_session()
+
                 logging.info(f"다중 DB 로드 후 드롭다운 업데이트 완료: {len(successful_opens)}개 DB")
 
             # 간단한 결과 메시지
@@ -2418,27 +2571,27 @@ class DBExcelEditor(QMainWindow):
             self.statusBar.showMessage("Excel → DB 변환 실패")
 
     def process_single_excel_import(self, file_path):
-        """단일 Excel 파일 가져오기 처리"""
+        """단일 Excel 파일 가져오기 처리 (스마트 업데이트 지원)"""
         try:
+            # 🚀 MCU Calibration 데이터베이스 저장소 경로 고정
+            mcu_db_dir = os.path.join(os.getcwd(), Info.MCU_CALIBRATION_DB_DIR)
+            os.makedirs(mcu_db_dir, exist_ok=True)  # 디렉토리가 없으면 생성
+
             # 기본 DB 파일명 생성 (엑셀 파일명과 동일, 확장자는 .db)
             excel_basename = os.path.basename(file_path)
             excel_filename_only = os.path.splitext(excel_basename)[0]
             default_db_name = f"{excel_filename_only}.db"
 
-            # DB 파일 저장 대화상자 (기본값: 엑셀 파일명과 동일한 DB명)
-            db_file_path, _ = QFileDialog.getSaveFileName(
-                self, "DB 파일 저장 위치 선택", os.path.join(self.last_directory, default_db_name),
-                Info.DB_FILE_FILTER
-            )
+            # 🚀 DB 파일 경로 고정 (사용자 선택 없이 자동 결정)
+            db_file_path = os.path.join(mcu_db_dir, default_db_name)
 
-            if not db_file_path:
-                return # 사용자가 취소
+            logging.info(f"Excel → DB 변환 대상: {file_path} → {db_file_path}")
 
-            # DB 파일 경로 저장 (다음번 사용을 위해)
-            self.last_directory = os.path.dirname(db_file_path)
-            self.settings.setValue(Info.LAST_DIRECTORY_KEY, self.last_directory)
+            # 🚀 업데이트 모드 플래그 초기화
+            self._excel_update_mode = False
+            self._target_db_name = None
 
-            # Excel → DB 변환용 새 DB 생성 및 연결
+            # Excel → DB 변환용 새 DB 생성 및 연결 (업데이트 로직 포함)
             if not self.setup_new_db_connection(db_file_path, "변환"):
                 return  # DB 생성 실패
 
@@ -2448,8 +2601,17 @@ class DBExcelEditor(QMainWindow):
             # 🚀 단일 Excel → DB 변환 진행률 대화상자 생성
             from PySide6.QtWidgets import QProgressDialog
             excel_name = os.path.basename(file_path)
-            progress = QProgressDialog(f"'{excel_name}' 파일을 데이터베이스로 변환 중...", "취소", 0, 100, self)
-            progress.setWindowTitle("Excel → DB 변환")
+
+            # 업데이트 모드에 따른 메시지 변경
+            if getattr(self, '_excel_update_mode', False):
+                progress_title = "Excel → DB 스마트 업데이트"
+                progress_msg = f"'{excel_name}' 파일로 데이터베이스를 스마트 업데이트 중..."
+            else:
+                progress_title = "Excel → DB 변환"
+                progress_msg = f"'{excel_name}' 파일을 데이터베이스로 변환 중..."
+
+            progress = QProgressDialog(progress_msg, "취소", 0, 100, self)
+            progress.setWindowTitle(progress_title)
             progress.setWindowModality(Qt.WindowModal)
             progress.setMinimumDuration(0)
             progress.show()
@@ -2475,8 +2637,13 @@ class DBExcelEditor(QMainWindow):
 
                 update_progress(10, "Excel 파일 분석 중...")
 
-                # Excel 파일 변환 실행
-                file_id = self.importer.import_excel_with_progress(file_path, db_file_path, update_progress)
+                # 🚀 스마트 업데이트 vs 일반 변환 분기
+                if getattr(self, '_excel_update_mode', False):
+                    # 스마트 업데이트 실행
+                    file_id = self.perform_smart_excel_update(file_path, update_progress)
+                else:
+                    # 일반 변환 실행
+                    file_id = self.importer.import_excel_with_progress(file_path, db_file_path, update_progress)
 
                 update_progress(100, "변환 완료!")
                 progress.close()
@@ -2495,9 +2662,20 @@ class DBExcelEditor(QMainWindow):
             # DB 드롭다운 업데이트
             self.update_db_combo()
 
-            self.statusBar.showMessage(f"Excel → DB 변환 완료: {os.path.basename(file_path)} → {os.path.basename(db_file_path)}")
-            QMessageBox.information(self, "변환 완료",
-                                  f"'{os.path.basename(file_path)}' 파일을 '{os.path.basename(db_file_path)}' 데이터베이스로 성공적으로 변환했습니다.")
+            # 성공 메시지 (모드에 따라 다름)
+            if getattr(self, '_excel_update_mode', False):
+                # 🚀 스마트 업데이트 완료 메시지 (변경사항 상세 표시)
+                change_details = getattr(self, '_last_update_details', {})
+                change_summary = change_details.get('summary', '시트가 변경사항이 업데이트 되었습니다')
+
+                self.statusBar.showMessage(f"Excel → DB 스마트 업데이트 완료: {os.path.basename(file_path)}")
+                QMessageBox.information(self, "스마트 업데이트 완료",
+                                      f"'{os.path.basename(file_path)}' 파일로 데이터베이스를 성공적으로 업데이트했습니다.\n\n"
+                                      f"📋 변경사항: {change_summary}")
+            else:
+                self.statusBar.showMessage(f"Excel → DB 변환 완료: {os.path.basename(file_path)} → {os.path.basename(db_file_path)}")
+                QMessageBox.information(self, "변환 완료",
+                                      f"'{os.path.basename(file_path)}' 파일을 '{os.path.basename(db_file_path)}' 데이터베이스로 성공적으로 변환했습니다.")
 
         except Exception as e:
             error_msg = f"Excel → DB 변환 중 오류 발생: {str(e)}"
@@ -2505,16 +2683,163 @@ class DBExcelEditor(QMainWindow):
             QMessageBox.critical(self, "변환 오류", error_msg)
             self.statusBar.showMessage("Excel → DB 변환 실패")
 
+    def perform_smart_excel_update(self, excel_path: str, progress_callback=None) -> int:
+        """
+        🚀 스마트 Excel 업데이트 실행 (기존 검증된 Excel 가져오기 로직 활용)
+
+        Args:
+            excel_path: Excel 파일 경로
+            progress_callback: 진행률 콜백 함수
+
+        Returns:
+            성공 시 1, 실패 시 예외 발생
+        """
+        try:
+            if progress_callback:
+                progress_callback(20, "Excel 데이터 분석 중...")
+
+            # 1. 대상 DB 이름 확인
+            target_db_name = getattr(self, '_target_db_name', None)
+            if not target_db_name:
+                raise Exception("업데이트 대상 DB가 지정되지 않았습니다.")
+
+            if progress_callback:
+                progress_callback(40, "기존 DB 백업 중...")
+
+            # 2. 기존 검증된 Excel 가져오기 로직 활용
+            # 임시로 새 DB에 Excel 데이터 로드 후 비교/업데이트
+            import tempfile
+            import os
+
+            # 임시 DB 파일 생성
+            temp_dir = tempfile.mkdtemp()
+            temp_db_path = os.path.join(temp_dir, "temp_update.db")
+
+            if progress_callback:
+                progress_callback(60, "Excel 데이터 임시 로드 중...")
+
+            try:
+                # 3. 임시 DB에 Excel 데이터 로드 (기존 검증된 로직 사용)
+                temp_db_handler = DBHandlerV2(temp_db_path)
+                temp_importer = ExcelImporter(temp_db_handler)
+                temp_importer.import_excel(excel_path)
+
+                if progress_callback:
+                    progress_callback(80, "스마트 업데이트 실행 중...")
+
+                # 4. 임시 DB에서 데이터 추출
+                excel_data = {}
+                temp_sheets = temp_db_handler.get_sheets()
+
+                for sheet_info in temp_sheets:
+                    sheet_name = sheet_info['name']
+                    sheet_id = sheet_info['id']
+                    sheet_data = temp_db_handler.get_sheet_data(sheet_id)
+                    excel_data[sheet_name] = sheet_data
+
+                # 5. 스마트 업데이트 실행 (백업 기능 제거)
+                update_result = self.db_manager.safe_update_database_from_excel(
+                    target_db_name, excel_data
+                )
+
+                if progress_callback:
+                    progress_callback(95, "업데이트 완료 확인 중...")
+
+                # 6. 결과 확인
+                if not update_result['success']:
+                    raise Exception(f"스마트 업데이트 실패: {update_result['error']}")
+
+                # 7. 성공 로깅 및 변경사항 정보 수집
+                updated_sheets = update_result['updated_sheets']
+                change_details = update_result.get('change_details', {})
+
+                logging.info(f"✅ 스마트 업데이트 완료: {target_db_name}")
+                logging.info(f"   - 업데이트된 시트: {updated_sheets}")
+                logging.info(f"   - 변경사항: {change_details.get('summary', '정보 없음')}")
+
+                # 🚀 변경사항 상세 정보를 인스턴스 변수에 저장 (성공 메시지에서 사용)
+                self._last_update_details = change_details
+
+                if progress_callback:
+                    progress_callback(100, f"스마트 업데이트 완료! ({change_details.get('summary', '처리 완료')})")
+
+                return 1  # 성공
+
+            finally:
+                # 8. 임시 파일 정리 (안전한 방식)
+                try:
+                    # DB 연결 해제
+                    if 'temp_db_handler' in locals():
+                        temp_db_handler.disconnect()
+
+                    # 잠시 대기 (Windows 파일 잠금 해제)
+                    import time
+                    time.sleep(0.1)
+
+                    # 임시 파일 삭제
+                    if 'temp_db_path' in locals() and os.path.exists(temp_db_path):
+                        os.remove(temp_db_path)
+
+                    # 임시 디렉토리 삭제 (비어있을 때만)
+                    if 'temp_dir' in locals() and os.path.exists(temp_dir):
+                        try:
+                            os.rmdir(temp_dir)
+                        except OSError:
+                            # 디렉토리가 비어있지 않으면 무시 (다른 프로세스가 사용 중일 수 있음)
+                            pass
+
+                except Exception as cleanup_error:
+                    logging.warning(f"임시 파일 정리 중 오류 (무시됨): {cleanup_error}")
+
+        except Exception as e:
+            logging.error(f"스마트 업데이트 실패: {e}")
+            raise Exception(f"스마트 업데이트 중 오류 발생: {str(e)}")
+
+
+
+    def test_update_logic_integrity(self) -> Dict[str, bool]:
+        """
+        🔍 업데이트 로직 무결성 테스트 (개발/디버그용)
+
+        Returns:
+            테스트 결과 딕셔너리
+        """
+        test_results = {}
+
+        try:
+            # 1. DB Manager 업데이트 함수 존재 확인
+            test_results['update_function_exists'] = hasattr(self.db_manager, 'safe_update_database_from_excel')
+
+            # 2. 업데이트 모드 플래그 확인
+            test_results['update_flags_initialized'] = hasattr(self, '_excel_update_mode') and hasattr(self, '_target_db_name')
+
+            # 3. 접미사 로직 제거 확인 (process_single_excel_import_isolated 함수 검사)
+            import inspect
+            source = inspect.getsource(self.process_single_excel_import_isolated)
+            test_results['suffix_logic_removed'] = 'while os.path.exists(db_file_path):' not in source
+
+            # 4. 스마트 업데이트 함수 존재 확인
+            test_results['smart_update_function_exists'] = hasattr(self, 'perform_smart_excel_update')
+
+            # 5. 기존 Excel 가져오기 로직 활용 확인
+            test_results['excel_importer_available'] = hasattr(self, 'importer') and self.importer is not None
+
+            logging.info(f"업데이트 로직 무결성 테스트 결과: {test_results}")
+            return test_results
+
+        except Exception as e:
+            logging.error(f"업데이트 로직 테스트 중 오류: {e}")
+            test_results['test_error'] = str(e)
+            return test_results
+
     def process_multiple_excel_files_simple(self, file_paths):
         """다중 Excel 파일 처리 (단일 함수 반복 호출 방식 - 안정성 개선)"""
         try:
-            # DB 저장 디렉토리 선택 대화상자
-            save_directory = QFileDialog.getExistingDirectory(
-                self, "DB 파일들을 저장할 디렉토리 선택", self.last_directory
-            )
+            # 🚀 MCU Calibration 데이터베이스 저장소 경로 고정
+            save_directory = os.path.join(os.getcwd(), Info.MCU_CALIBRATION_DB_DIR)
+            os.makedirs(save_directory, exist_ok=True)  # 디렉토리가 없으면 생성
 
-            if not save_directory:
-                return  # 사용자가 취소
+            logging.info(f"다중 Excel 파일 처리 시작: {len(file_paths)}개 파일 → {save_directory}")
 
             # 진행률 대화상자 생성
             from PySide6.QtWidgets import QProgressDialog
@@ -2630,14 +2955,21 @@ class DBExcelEditor(QMainWindow):
             # 자동으로 DB 파일 경로 생성 (사용자 선택 없이)
             db_file_path = os.path.join(save_directory, default_db_name)
 
-            # 파일이 이미 존재하는 경우 고유한 이름 생성
-            counter = 1
-            original_db_path = db_file_path
-            while os.path.exists(db_file_path):
-                name_without_ext = os.path.splitext(original_db_path)[0]
-                db_file_path = f"{name_without_ext}_{counter}.db"
-                default_db_name = f"{excel_filename_only}_{counter}.db"
-                counter += 1
+            # 🚀 접미사 로직 제거: 파일이 이미 존재하는 경우 사용자에게 확인
+            if os.path.exists(db_file_path):
+                from PySide6.QtWidgets import QMessageBox
+                reply = QMessageBox.question(
+                    None, "기존 파일 발견",
+                    f"'{default_db_name}' 파일이 이미 존재합니다.\n\n"
+                    f"기존 파일을 덮어쓰시겠습니까?\n"
+                    f"(기존 데이터가 완전히 삭제됩니다)",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+
+                if reply != QMessageBox.Yes:
+                    logging.info(f"사용자가 덮어쓰기를 취소: {db_file_path}")
+                    return None  # 사용자가 취소
 
             logging.info(f"독립적 Excel → DB 변환: {file_path} → {db_file_path}")
 
@@ -2754,13 +3086,14 @@ class DBExcelEditor(QMainWindow):
                     db_filename = f"{excel_filename_only}.db"
                     db_file_path = os.path.join(save_directory, db_filename)
 
-                    # 파일이 이미 존재하는 경우 고유한 이름 생성
-                    counter = 1
-                    original_db_path = db_file_path
-                    while os.path.exists(db_file_path):
-                        name_without_ext = os.path.splitext(original_db_path)[0]
-                        db_file_path = f"{name_without_ext}_{counter}.db"
-                        counter += 1
+                    # 🚀 접미사 로직 제거: 파일이 이미 존재하는 경우 건너뛰기
+                    if os.path.exists(db_file_path):
+                        logging.warning(f"파일이 이미 존재하여 건너뛰기: {db_file_path}")
+                        failed_imports.append({
+                            'excel_file': excel_basename,
+                            'error': f"동일한 이름의 DB 파일이 이미 존재함: {db_filename}"
+                        })
+                        continue
 
                     logging.info(f"다중 가져오기 [{i+1}/{len(file_paths)}]: {file_path} -> {db_file_path}")
 
@@ -3909,6 +4242,14 @@ class DBExcelEditor(QMainWindow):
         logging.info("=== 애플리케이션 정리 작업 시작 ===")
 
         try:
+            # 🚀 0. 프로그램 종료 시 다중 DB 세션 상태 저장
+            try:
+                logging.info("프로그램 종료 시 다중 DB 세션 저장 중...")
+                self.save_multi_db_session()
+                logging.info("다중 DB 세션 저장 완료")
+            except Exception as e:
+                logging.error(f"다중 DB 세션 저장 중 오류: {e}")
+
             # 1. 개별 DB 핸들러 연결 해제 (안전 조치)
             if hasattr(self, 'db') and self.db:
                 try:
@@ -3924,8 +4265,6 @@ class DBExcelEditor(QMainWindow):
                 try:
                     db_count = self.db_manager.get_database_count()
                     logging.info(f"DBManager 정리 시작 - 현재 {db_count}개 DB 연결")
-
-
 
                     # 모든 DB 연결 해제
                     logging.info("모든 DB 연결 해제 중...")

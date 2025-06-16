@@ -104,6 +104,9 @@ class Info:
     EXCEL_FILE_FILTER = ExcelConstants.EXCEL_FILE_FILTER
     CSV_FILE_FILTER = ExcelConstants.CSV_FILE_FILTER
 
+    # 🚀 MCU Calibration 데이터베이스 저장소 경로
+    MCU_CALIBRATION_DB_DIR = "MCU_Calibration_Database"  # 프로그램 실행 경로 기준
+
     # UI 텍스트 상수
     EXCEL_TO_DB_MENU_TEXT = "Excel → DB 변환(&I)..."
     EXCEL_TO_DB_STATUS_TIP = "Excel 파일을 SQLite 데이터베이스로 변환합니다 (다중 선택 지원)"

@@ -409,21 +409,19 @@ class DBManager:
 
         return integrity_status
 
-    def safe_update_database_from_excel(self, db_name: str, excel_data: Dict[str, List[List]],
-                                       backup_before_update: bool = True) -> Dict[str, Any]:
+    def safe_update_database_from_excel(self, db_name: str, excel_data: Dict[str, List[List]]) -> Dict[str, Any]:
         """
         Excel 데이터로 기존 DB를 안전하게 업데이트
 
         Args:
             db_name: 업데이트할 DB 이름
             excel_data: {sheet_name: [[row_data], ...], ...} 형태의 Excel 데이터
-            backup_before_update: 업데이트 전 백업 생성 여부
 
         Returns:
             {
                 'success': bool,
                 'updated_sheets': List[str],
-                'backup_path': str or None,
+                'change_details': Dict,
                 'rollback_info': Dict or None,
                 'error': str or None
             }
@@ -433,25 +431,20 @@ class DBManager:
                 'success': False,
                 'error': f"데이터베이스를 찾을 수 없습니다: {db_name}",
                 'updated_sheets': [],
-                'backup_path': None,
+                'change_details': {'summary': '오류 발생'},
                 'rollback_info': None
             }
 
         db_handler = self.databases[db_name]
-        backup_path = None
         rollback_info = {}
         updated_sheets = []
 
         try:
-            # 1. 백업 생성 (선택사항)
-            if backup_before_update:
-                backup_path = self._create_database_backup(db_name)
-                logging.info(f"DB 백업 생성 완료: {backup_path}")
-
-            # 2. 트랜잭션 시작
+            # 🚀 백업 기능 제거: 트랜잭션으로 안전성 보장
+            # 1. 트랜잭션 시작
             db_handler.conn.execute("BEGIN TRANSACTION")
 
-            # 3. 기존 시트 정보 수집 (롤백용)
+            # 2. 기존 시트 정보 수집 (롤백용)
             existing_sheets = db_handler.get_sheets()
             for sheet in existing_sheets:
                 rollback_info[sheet['name']] = {
@@ -459,7 +452,7 @@ class DBManager:
                     'existed_before': True
                 }
 
-            # 4. Excel 데이터를 시트별로 처리
+            # 3. Excel 데이터를 시트별로 처리
             for sheet_name, sheet_data in excel_data.items():
                 try:
                     # 기존 시트 확인
@@ -493,20 +486,23 @@ class DBManager:
                     logging.error(f"시트 '{sheet_name}' 처리 중 오류: {sheet_error}")
                     raise Exception(f"시트 '{sheet_name}' 업데이트 실패: {sheet_error}")
 
-            # 5. 트랜잭션 커밋
+            # 4. 트랜잭션 커밋
             db_handler.conn.commit()
             logging.info(f"✅ DB 업데이트 완료: {db_name}, 업데이트된 시트: {updated_sheets}")
+
+            # 🚀 변경사항 상세 정보 수집
+            change_details = self._collect_change_details(rollback_info, updated_sheets)
 
             return {
                 'success': True,
                 'updated_sheets': updated_sheets,
-                'backup_path': backup_path,
                 'rollback_info': rollback_info,
+                'change_details': change_details,  # 🚀 변경사항 상세 정보 추가
                 'error': None
             }
 
         except Exception as e:
-            # 6. 오류 발생 시 롤백
+            # 5. 오류 발생 시 롤백
             try:
                 db_handler.conn.rollback()
                 logging.error(f"DB 업데이트 실패, 롤백 완료: {e}")
@@ -517,35 +513,22 @@ class DBManager:
                 'success': False,
                 'error': str(e),
                 'updated_sheets': [],
-                'backup_path': backup_path,
+                'change_details': {'summary': '업데이트 실패'},
                 'rollback_info': rollback_info
             }
 
-    def _create_database_backup(self, db_name: str) -> str:
-        """DB 백업 파일 생성"""
-        import shutil
-        from datetime import datetime
 
-        if db_name not in self.db_file_paths:
-            raise ValueError(f"DB 파일 경로를 찾을 수 없습니다: {db_name}")
-
-        original_path = self.db_file_paths[db_name]
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = f"{original_path}.backup_{timestamp}"
-
-        shutil.copy2(original_path, backup_path)
-        return backup_path
 
     def _replace_sheet_data_safely(self, db_handler, sheet_id: int, new_data: List[List]) -> None:
-        """시트 데이터를 안전하게 교체"""
-        # 기존 셀 데이터 삭제
+        """시트 데이터를 안전하게 교체 (기존 트랜잭션 내에서 실행)"""
+        # 기존 셀 데이터 삭제 (트랜잭션 내에서 직접 실행)
         db_handler.cursor.execute("DELETE FROM cells WHERE sheet_id = ?", (sheet_id,))
 
-        # 새 데이터 삽입
+        # 새 데이터 삽입 (트랜잭션 내에서 실행)
         self._insert_sheet_data_safely(db_handler, sheet_id, new_data)
 
     def _insert_sheet_data_safely(self, db_handler, sheet_id: int, data: List[List]) -> None:
-        """시트에 데이터를 안전하게 삽입"""
+        """시트에 데이터를 안전하게 삽입 (기존 트랜잭션 내에서 실행)"""
         cells_data = []
         for row_idx, row in enumerate(data):
             for col_idx, cell_value in enumerate(row):
@@ -553,7 +536,67 @@ class DBManager:
                     cells_data.append((row_idx, col_idx, str(cell_value)))
 
         if cells_data:
-            db_handler.batch_insert_cells(sheet_id, cells_data)
+            # 🔧 트랜잭션 중첩 방지: 기존 트랜잭션 내에서 실행하는 함수 사용
+            db_handler.batch_insert_cells_in_transaction(sheet_id, cells_data)
+
+    def _collect_change_details(self, rollback_info: Dict, updated_sheets: List[str]) -> Dict[str, Any]:
+        """
+        🚀 변경사항 상세 정보 수집
+
+        Args:
+            rollback_info: 롤백 정보 (기존 데이터 포함)
+            updated_sheets: 업데이트된 시트 목록
+
+        Returns:
+            변경사항 상세 정보
+        """
+        try:
+            change_details = {
+                'total_sheets': len(updated_sheets),
+                'new_sheets': [],
+                'updated_sheets': [],
+                'summary': ""
+            }
+
+            # 시트별 변경사항 분석
+            for sheet_name in updated_sheets:
+                if sheet_name in rollback_info:
+                    sheet_info = rollback_info[sheet_name]
+
+                    if sheet_info.get('existed_before', False):
+                        # 기존 시트 업데이트
+                        backup_data = sheet_info.get('backup_data', [])
+                        change_details['updated_sheets'].append({
+                            'name': sheet_name,
+                            'previous_rows': len(backup_data) if backup_data else 0,
+                            'action': '데이터 업데이트'
+                        })
+                    else:
+                        # 새 시트 생성
+                        change_details['new_sheets'].append({
+                            'name': sheet_name,
+                            'action': '새 시트 생성'
+                        })
+
+            # 요약 메시지 생성
+            summary_parts = []
+            if change_details['new_sheets']:
+                summary_parts.append(f"새 시트 {len(change_details['new_sheets'])}개 생성")
+            if change_details['updated_sheets']:
+                summary_parts.append(f"기존 시트 {len(change_details['updated_sheets'])}개 업데이트")
+
+            change_details['summary'] = ", ".join(summary_parts) if summary_parts else "변경사항 없음"
+
+            return change_details
+
+        except Exception as e:
+            logging.warning(f"변경사항 상세 정보 수집 중 오류: {e}")
+            return {
+                'total_sheets': len(updated_sheets),
+                'new_sheets': [],
+                'updated_sheets': [],
+                'summary': f"총 {len(updated_sheets)}개 시트 처리됨"
+            }
 
     def safe_reload_database(self, db_file_path: str, existing_db_name: str) -> str:
         """

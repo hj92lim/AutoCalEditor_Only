@@ -1,0 +1,24 @@
+# 🚀 AutoCalEditor 의존성 목록 (PyInstaller 빌드용)
+
+# GUI 프레임워크
+PySide6>=6.5.0
+
+# 데이터베이스
+# sqlite3는 Python 표준 라이브러리
+
+# Excel 처리
+openpyxl>=3.1.0
+xlwings>=0.30.0
+pywin32>=306  # Windows Excel COM 인터페이스
+
+# 수치 계산
+numpy>=1.24.0
+
+# Cython (개발 시 필요)
+Cython>=3.0.0
+
+# PyInstaller (빌드 시 필요)
+PyInstaller>=5.13.0
+
+# 기타 유틸리티
+pathlib2>=2.3.7  # Python 3.4+ 호환성
