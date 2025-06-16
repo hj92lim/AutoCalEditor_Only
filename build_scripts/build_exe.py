@@ -29,8 +29,13 @@ logging.basicConfig(
 
 def find_cython_modules():
     """Find compiled Cython modules"""
+    # Always look for cython_extensions in current working directory
     cython_dir = Path("cython_extensions")
     modules = []
+
+    if not cython_dir.exists():
+        logging.warning(f"Cython extensions directory not found: {cython_dir.absolute()}")
+        return modules
 
     if sys.platform == "win32":
         # Windows: .pyd files
@@ -44,6 +49,8 @@ def find_cython_modules():
         for so_file in cython_dir.glob("*.so"):
             modules.append(str(so_file))
 
+    # Remove duplicates
+    modules = list(set(modules))
     logging.info(f"Found Cython modules: {modules}")
     return modules
 
@@ -288,14 +295,25 @@ def main():
     """Main build function"""
     logging.info("AutoCalEditor build started")
 
-    # Check current directory
-    if not os.path.exists('main.py'):
-        logging.error("main.py file not found. Please run from project root.")
-        return False
+    # Ensure we're in the project root directory
+    script_dir = Path(__file__).parent  # build_scripts directory
+    project_root = script_dir.parent    # project root directory
 
-    # Check PyInstaller availability
-    if not check_pyinstaller():
-        return False
+    # Change to project root if not already there
+    original_cwd = os.getcwd()
+    if not os.path.exists('main.py'):
+        logging.info(f"Changing directory to project root: {project_root}")
+        os.chdir(project_root)
+
+    try:
+        # Check if main.py exists in current directory
+        if not os.path.exists('main.py'):
+            logging.error(f"main.py not found in {os.getcwd()}")
+            return False
+
+        # Check PyInstaller availability
+        if not check_pyinstaller():
+            return False
 
     # Check Cython modules
     cython_modules = find_cython_modules()
@@ -303,13 +321,17 @@ def main():
         logging.warning("Cython modules not found. Please run Cython build first.")
         logging.info("Cython build command: python build_scripts/build_cython.py")
 
-    # Execute build
-    if build_executable():
-        logging.info("Build completed! Check dist/AutoCalEditor.exe file.")
-        return True
-    else:
-        logging.error("Build failed!")
-        return False
+        # Execute build
+        if build_executable():
+            logging.info("Build completed! Check dist/AutoCalEditor.exe file.")
+            return True
+        else:
+            logging.error("Build failed!")
+            return False
+
+    finally:
+        # Always restore original directory
+        os.chdir(original_cwd)
 
 if __name__ == "__main__":
     success = main()

@@ -55,36 +55,35 @@ def run_cython_build():
         return False
 
 def run_pyinstaller_build():
-    """Build PyInstaller executable with real-time output"""
+    """Build PyInstaller executable with timeout and better error handling"""
     logging.info("Step 2: Building PyInstaller executable")
 
     try:
-        # Use Popen for real-time output instead of run()
+        # Use simple subprocess.run with timeout instead of Popen
         env = os.environ.copy()
         env['PYTHONIOENCODING'] = 'utf-8'
 
-        process = subprocess.Popen([
+        result = subprocess.run([
             sys.executable, 'build_scripts/build_exe.py'
-        ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, encoding='utf-8', errors='replace', env=env)
+        ], capture_output=True, text=True, encoding='utf-8', errors='replace',
+        env=env, timeout=600)  # 10 minute timeout
 
-        # Real-time output
-        while True:
-            output = process.stdout.readline()
-            if output == '' and process.poll() is not None:
-                break
-            if output:
-                print(output.strip())
-
-        return_code = process.poll()
-
-        if return_code == 0:
+        if result.returncode == 0:
             logging.info("PyInstaller build successful")
+            if result.stdout:
+                logging.info(f"Build output: {result.stdout}")
             return True
         else:
-            logging.error(f"PyInstaller build failed with return code: {return_code}")
+            logging.error(f"PyInstaller build failed with return code: {result.returncode}")
+            if result.stderr:
+                logging.error(f"Error output: {result.stderr}")
+            if result.stdout:
+                logging.error(f"Standard output: {result.stdout}")
             return False
 
+    except subprocess.TimeoutExpired:
+        logging.error("PyInstaller build timeout (10 minutes)")
+        return False
     except Exception as e:
         logging.error(f"Exception during PyInstaller build: {e}")
         return False

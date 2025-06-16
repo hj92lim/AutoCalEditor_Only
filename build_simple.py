@@ -49,14 +49,14 @@ def find_cython_modules():
 def build_with_pyinstaller():
     """Build directly with PyInstaller"""
     logging.info("Building with PyInstaller...")
-    
+
     # Clean previous builds
     clean_build()
-    
+
     # Find Cython modules
     cython_modules = find_cython_modules()
     logging.info(f"Found Cython modules: {len(cython_modules)}")
-    
+
     # Build PyInstaller command
     cmd = [
         sys.executable, '-m', 'PyInstaller',
@@ -66,11 +66,11 @@ def build_with_pyinstaller():
         '--clean',
         'main.py'
     ]
-    
+
     # Add Cython modules as binary files
     for module in cython_modules:
         cmd.extend(['--add-binary', f'{module};cython_extensions'])
-    
+
     # Add hidden imports
     hidden_imports = [
         'PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtWidgets', 'PySide6.QtSql',
@@ -87,17 +87,23 @@ def build_with_pyinstaller():
         'ui.ui_components', 'ui.git_status_dialog',
         'core.data_parser', 'utils.git_manager'
     ]
-    
+
     for import_name in hidden_imports:
         cmd.extend(['--hidden-import', import_name])
-    
-    # Execute PyInstaller
-    logging.info(f"Command: {' '.join(cmd)}")
-    
+
+    # Execute PyInstaller with timeout
+    logging.info("Starting PyInstaller build...")
+    logging.info("This may take several minutes...")
+
     try:
-        result = subprocess.run(cmd, check=True, text=True, 
-                              encoding='utf-8', errors='replace')
-        
+        # Set environment variables
+        env = os.environ.copy()
+        env['PYTHONIOENCODING'] = 'utf-8'
+
+        result = subprocess.run(cmd, check=True, text=True,
+                              encoding='utf-8', errors='replace',
+                              env=env, timeout=900)  # 15 minute timeout
+
         # Check result
         exe_path = Path('dist/AutoCalEditor.exe')
         if exe_path.exists():
@@ -107,7 +113,10 @@ def build_with_pyinstaller():
         else:
             logging.error("Executable not found")
             return False
-            
+
+    except subprocess.TimeoutExpired:
+        logging.error("Build timeout (15 minutes)")
+        return False
     except subprocess.CalledProcessError as e:
         logging.error(f"PyInstaller failed: {e}")
         return False
