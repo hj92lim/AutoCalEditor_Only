@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-🚀 AutoCalEditor PyInstaller 빌드 스크립트
-Cython 모듈 포함, --onefile --noconsole 지원
+AutoCalEditor PyInstaller Build Script
+Includes Cython modules, supports --onefile --noconsole
 """
 
 import os
@@ -13,11 +13,11 @@ import logging
 from pathlib import Path
 import glob
 
-# 🔧 Windows 인코딩 문제 해결: 환경변수 설정
+# Windows encoding fix: environment variables
 os.environ['PYTHONIOENCODING'] = 'utf-8'
 os.environ['PYTHONUTF8'] = '1'
 
-# 로깅 설정
+# Logging setup
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -28,35 +28,35 @@ logging.basicConfig(
 )
 
 def find_cython_modules():
-    """Cython 컴파일된 모듈 찾기"""
+    """Find compiled Cython modules"""
     cython_dir = Path("cython_extensions")
     modules = []
-    
+
     if sys.platform == "win32":
-        # Windows: .pyd 파일들
+        # Windows: .pyd files
         for pyd_file in cython_dir.glob("*.pyd"):
             modules.append(str(pyd_file))
-        # cp311-win_amd64.pyd 형태도 포함
+        # Include cp311-win_amd64.pyd format
         for pyd_file in cython_dir.glob("*.cp*.pyd"):
             modules.append(str(pyd_file))
     else:
-        # Linux/Mac: .so 파일들
+        # Linux/Mac: .so files
         for so_file in cython_dir.glob("*.so"):
             modules.append(str(so_file))
-    
-    logging.info(f"발견된 Cython 모듈: {modules}")
+
+    logging.info(f"Found Cython modules: {modules}")
     return modules
 
 def get_hidden_imports():
-    """숨겨진 import 목록"""
+    """Hidden import list"""
     return [
-        # PySide6 관련
+        # PySide6 related
         'PySide6.QtCore',
-        'PySide6.QtGui', 
+        'PySide6.QtGui',
         'PySide6.QtWidgets',
         'PySide6.QtSql',
-        
-        # 표준 라이브러리
+
+        # Standard library
         'sqlite3',
         'json',
         'csv',
@@ -74,8 +74,8 @@ def get_hidden_imports():
         'platform',
         'uuid',
         'hashlib',
-        
-        # 서드파티 라이브러리
+
+        # Third-party libraries
         'win32com.client',
         'win32com.gen_py',
         'pythoncom',
@@ -83,14 +83,14 @@ def get_hidden_imports():
         'numpy',
         'openpyxl',
         'xlwings',
-        
-        # Cython 확장 모듈
+
+        # Cython extension modules
         'cython_extensions.excel_processor_v2',
-        'cython_extensions.code_generator_v2', 
+        'cython_extensions.code_generator_v2',
         'cython_extensions.data_processor',
         'cython_extensions.regex_optimizer',
-        
-        # 프로젝트 모듈
+
+        # Project modules
         'core.info',
         'core.constants',
         'data_manager.db_handler_v2',
@@ -106,38 +106,39 @@ def get_hidden_imports():
     ]
 
 def get_data_files():
-    """데이터 파일 목록"""
+    """Data files list"""
     data_files = []
-    
-    # Cython 모듈들
+
+    # Cython modules
     cython_modules = find_cython_modules()
     for module in cython_modules:
         data_files.append((module, 'cython_extensions'))
-    
-    # 기타 필요한 파일들
+
+    # Other necessary files
     if os.path.exists('README.md'):
         data_files.append(('README.md', '.'))
-    
+
     if os.path.exists('requirements.txt'):
         data_files.append(('requirements.txt', '.'))
-        
-    # 설정 파일들 (있다면)
+
+    # Config files (if any)
     config_files = ['config.ini', 'settings.json']
     for config_file in config_files:
         if os.path.exists(config_file):
             data_files.append((config_file, '.'))
-    
+
     return data_files
 
 def create_spec_file():
-    """PyInstaller spec 파일 생성"""
+    """Generate PyInstaller spec file"""
     spec_content = f'''# -*- mode: python ; coding: utf-8 -*-
 
 import sys
+import os
 from pathlib import Path
 
-# 프로젝트 루트 경로
-project_root = Path(__file__).parent
+# Project root path - fix for __file__ not defined error
+project_root = Path(os.getcwd())
 
 block_cipher = None
 
@@ -211,34 +212,34 @@ exe = EXE(
     
     with open('AutoCalEditor.spec', 'w', encoding='utf-8') as f:
         f.write(spec_content)
-    
-    logging.info("✓ spec 파일 생성 완료: AutoCalEditor.spec")
+
+    logging.info("Spec file generation completed: AutoCalEditor.spec")
 
 def build_executable():
-    """실행 파일 빌드"""
+    """Build executable file"""
     try:
-        logging.info("🔨 PyInstaller 빌드 시작...")
-        
-        # 1. 이전 빌드 결과 정리
+        logging.info("PyInstaller build started...")
+
+        # 1. Clean previous build results
         cleanup_dirs = ['build', 'dist', '__pycache__']
         for dir_name in cleanup_dirs:
             if os.path.exists(dir_name):
                 shutil.rmtree(dir_name)
-                logging.info(f"✓ 이전 빌드 디렉토리 정리: {dir_name}")
-        
-        # 2. spec 파일 생성
+                logging.info(f"Previous build directory cleaned: {dir_name}")
+
+        # 2. Generate spec file
         create_spec_file()
-        
-        # 3. PyInstaller 실행
+
+        # 3. Run PyInstaller
         cmd = [
             sys.executable, '-m', 'PyInstaller',
-            '--clean',  # 캐시 정리
+            '--clean',  # Clean cache
             'AutoCalEditor.spec'
         ]
-        
-        logging.info(f"실행 명령어: {' '.join(cmd)}")
-        
-        # 🔧 Windows 인코딩 문제 해결: 환경변수 설정 추가
+
+        logging.info(f"Execution command: {' '.join(cmd)}")
+
+        # Windows encoding fix: environment variables
         env = os.environ.copy()
         env['PYTHONIOENCODING'] = 'utf-8'
 
@@ -250,50 +251,50 @@ def build_executable():
             errors='replace',
             env=env
         )
-        
+
         if result.returncode == 0:
-            logging.info("✅ PyInstaller 빌드 성공!")
-            logging.info(f"빌드 출력:\\n{result.stdout}")
-            
-            # 빌드 결과 확인
+            logging.info("PyInstaller build successful!")
+            logging.info(f"Build output:\\n{result.stdout}")
+
+            # Check build result
             exe_path = Path('dist/AutoCalEditor.exe')
             if exe_path.exists():
                 size_mb = exe_path.stat().st_size / (1024 * 1024)
-                logging.info(f"✓ 실행 파일 생성: {exe_path} ({size_mb:.1f} MB)")
+                logging.info(f"Executable file created: {exe_path} ({size_mb:.1f} MB)")
                 return True
             else:
-                logging.error("❌ 실행 파일이 생성되지 않았습니다.")
+                logging.error("Executable file was not created.")
                 return False
         else:
-            logging.error("❌ PyInstaller 빌드 실패!")
-            logging.error(f"오류 출력:\\n{result.stderr}")
+            logging.error("PyInstaller build failed!")
+            logging.error(f"Error output:\\n{result.stderr}")
             return False
-            
+
     except Exception as e:
-        logging.error(f"❌ 빌드 중 예외 발생: {e}")
+        logging.error(f"Exception occurred during build: {e}")
         return False
 
 def main():
-    """메인 빌드 함수"""
-    logging.info("🚀 AutoCalEditor 빌드 시작")
-    
-    # 현재 디렉토리 확인
+    """Main build function"""
+    logging.info("AutoCalEditor build started")
+
+    # Check current directory
     if not os.path.exists('main.py'):
-        logging.error("❌ main.py 파일을 찾을 수 없습니다. 프로젝트 루트에서 실행하세요.")
+        logging.error("main.py file not found. Please run from project root.")
         return False
-    
-    # Cython 모듈 확인
+
+    # Check Cython modules
     cython_modules = find_cython_modules()
     if not cython_modules:
-        logging.warning("⚠️ Cython 모듈을 찾을 수 없습니다. 먼저 Cython 빌드를 실행하세요.")
-        logging.info("Cython 빌드 명령어: python build_scripts/build_cython.py")
-    
-    # 빌드 실행
+        logging.warning("Cython modules not found. Please run Cython build first.")
+        logging.info("Cython build command: python build_scripts/build_cython.py")
+
+    # Execute build
     if build_executable():
-        logging.info("🎉 빌드 완료! dist/AutoCalEditor.exe 파일을 확인하세요.")
+        logging.info("Build completed! Check dist/AutoCalEditor.exe file.")
         return True
     else:
-        logging.error("💥 빌드 실패!")
+        logging.error("Build failed!")
         return False
 
 if __name__ == "__main__":

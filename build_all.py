@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-🚀 AutoCalEditor 전체 빌드 스크립트
-Cython 컴파일 → PyInstaller 빌드 → 결과 확인
+AutoCalEditor Complete Build Script
+Cython Compilation -> PyInstaller Build -> Result Verification
 """
 
 import os
@@ -11,11 +11,11 @@ import logging
 import subprocess
 from pathlib import Path
 
-# 🔧 Windows 인코딩 문제 해결: 환경변수 설정
+# Windows encoding fix: environment variables
 os.environ['PYTHONIOENCODING'] = 'utf-8'
 os.environ['PYTHONUTF8'] = '1'
 
-# 로깅 설정 (UTF-8 인코딩 강제)
+# Logging setup (UTF-8 encoding forced)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -25,120 +25,120 @@ logging.basicConfig(
 )
 
 def run_cython_build():
-    """Cython 모듈 빌드"""
-    logging.info("🔨 1단계: Cython 모듈 빌드")
+    """Build Cython modules"""
+    logging.info("Step 1: Building Cython modules")
 
     try:
-        # 🔧 Windows 인코딩 문제 해결: UTF-8 강제 설정
+        # Windows encoding fix: UTF-8 forced setting
         result = subprocess.run([
             sys.executable, 'build_scripts/build_cython.py'
         ], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True)
 
-        logging.info("✅ Cython 빌드 성공")
+        logging.info("Cython build successful")
         if result.stdout:
-            logging.debug(f"Cython 빌드 출력: {result.stdout}")
+            logging.debug(f"Cython build output: {result.stdout}")
         return True
 
     except subprocess.CalledProcessError as e:
-        logging.error(f"❌ Cython 빌드 실패: {e}")
+        logging.error(f"Cython build failed: {e}")
         if e.stderr:
-            logging.error(f"오류 출력: {e.stderr}")
+            logging.error(f"Error output: {e.stderr}")
         if e.stdout:
-            logging.error(f"표준 출력: {e.stdout}")
+            logging.error(f"Standard output: {e.stdout}")
         return False
     except Exception as e:
-        logging.error(f"❌ Cython 빌드 중 예외: {e}")
+        logging.error(f"Exception during Cython build: {e}")
         return False
 
 def run_pyinstaller_build():
-    """PyInstaller 실행 파일 빌드"""
-    logging.info("🔨 2단계: PyInstaller 실행 파일 빌드")
+    """Build PyInstaller executable"""
+    logging.info("Step 2: Building PyInstaller executable")
 
     try:
-        # 🔧 Windows 인코딩 문제 해결: UTF-8 강제 설정
+        # Windows encoding fix: UTF-8 forced setting
         result = subprocess.run([
             sys.executable, 'build_scripts/build_exe.py'
         ], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True)
 
-        logging.info("✅ PyInstaller 빌드 성공")
+        logging.info("PyInstaller build successful")
         if result.stdout:
-            logging.debug(f"PyInstaller 빌드 출력: {result.stdout}")
+            logging.debug(f"PyInstaller build output: {result.stdout}")
         return True
 
     except subprocess.CalledProcessError as e:
-        logging.error(f"❌ PyInstaller 빌드 실패: {e}")
+        logging.error(f"PyInstaller build failed: {e}")
         if e.stderr:
-            logging.error(f"오류 출력: {e.stderr}")
+            logging.error(f"Error output: {e.stderr}")
         if e.stdout:
-            logging.error(f"표준 출력: {e.stdout}")
+            logging.error(f"Standard output: {e.stdout}")
         return False
     except Exception as e:
-        logging.error(f"❌ PyInstaller 빌드 중 예외: {e}")
+        logging.error(f"Exception during PyInstaller build: {e}")
         return False
 
 def verify_build_result():
-    """빌드 결과 확인"""
-    logging.info("🔍 3단계: 빌드 결과 확인")
-    
+    """Verify build result"""
+    logging.info("Step 3: Verifying build result")
+
     exe_path = Path('dist/AutoCalEditor.exe')
     if exe_path.exists():
         size_mb = exe_path.stat().st_size / (1024 * 1024)
-        logging.info(f"✅ 실행 파일 생성 완료: {exe_path}")
-        logging.info(f"📦 파일 크기: {size_mb:.1f} MB")
-        
-        # 실행 파일 테스트 (선택사항)
-        logging.info("🧪 실행 파일 테스트 중...")
+        logging.info(f"Executable file created successfully: {exe_path}")
+        logging.info(f"File size: {size_mb:.1f} MB")
+
+        # Executable file test (optional)
+        logging.info("Testing executable file...")
         try:
-            # 🔧 Windows 인코딩 문제 해결: UTF-8 강제 설정
+            # Windows encoding fix: UTF-8 forced setting
             test_result = subprocess.run([
                 str(exe_path), '--help'
             ], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=10)
 
             if test_result.returncode == 0:
-                logging.info("✅ 실행 파일 테스트 성공")
+                logging.info("Executable file test successful")
             else:
-                logging.warning("⚠️ 실행 파일 테스트 실패 (정상일 수 있음)")
+                logging.warning("Executable file test failed (may be normal)")
 
         except subprocess.TimeoutExpired:
-            logging.info("⏰ 실행 파일 테스트 타임아웃 (GUI 앱이므로 정상)")
+            logging.info("Executable file test timeout (normal for GUI app)")
         except Exception as e:
-            logging.warning(f"⚠️ 실행 파일 테스트 중 오류: {e}")
-        
+            logging.warning(f"Error during executable file test: {e}")
+
         return True
     else:
-        logging.error("❌ 실행 파일이 생성되지 않았습니다.")
+        logging.error("Executable file was not created.")
         return False
 
 def main():
-    """메인 빌드 프로세스"""
-    logging.info("🚀 AutoCalEditor 전체 빌드 시작")
+    """Main build process"""
+    logging.info("AutoCalEditor complete build started")
     logging.info("=" * 50)
-    
-    # 프로젝트 루트 확인
+
+    # Check project root
     if not os.path.exists('main.py'):
-        logging.error("❌ main.py를 찾을 수 없습니다. 프로젝트 루트에서 실행하세요.")
+        logging.error("main.py not found. Please run from project root.")
         return False
-    
-    # 1단계: Cython 빌드
+
+    # Step 1: Cython build
     if not run_cython_build():
-        logging.error("💥 Cython 빌드 실패로 중단")
+        logging.error("Build stopped due to Cython build failure")
         return False
-    
-    # 2단계: PyInstaller 빌드  
+
+    # Step 2: PyInstaller build
     if not run_pyinstaller_build():
-        logging.error("💥 PyInstaller 빌드 실패로 중단")
+        logging.error("Build stopped due to PyInstaller build failure")
         return False
-    
-    # 3단계: 결과 확인
+
+    # Step 3: Result verification
     if not verify_build_result():
-        logging.error("💥 빌드 결과 확인 실패")
+        logging.error("Build result verification failed")
         return False
-    
+
     logging.info("=" * 50)
-    logging.info("🎉 전체 빌드 완료!")
-    logging.info("📁 결과 파일: dist/AutoCalEditor.exe")
-    logging.info("🚀 실행 방법: ./dist/AutoCalEditor.exe")
-    
+    logging.info("Complete build finished!")
+    logging.info("Result file: dist/AutoCalEditor.exe")
+    logging.info("Run command: ./dist/AutoCalEditor.exe")
+
     return True
 
 if __name__ == "__main__":

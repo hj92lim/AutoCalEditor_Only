@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-07_Python_DB_Refactoring Cython 빌드 스크립트
-성능 최적화를 위한 Cython 확장 모듈 빌드
+07_Python_DB_Refactoring Cython Build Script
+Build Cython extension modules for performance optimization
 """
 
 import os
@@ -11,11 +11,11 @@ import shutil
 import logging
 from pathlib import Path
 
-# 🔧 Windows 인코딩 문제 해결: 환경변수 설정
+# Windows encoding fix: environment variables
 os.environ['PYTHONIOENCODING'] = 'utf-8'
 os.environ['PYTHONUTF8'] = '1'
 
-# 로깅 설정
+# Logging setup
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -64,46 +64,46 @@ def clean_build_files():
                     logging.info(f"🗑 파일 제거: {path}")
 
 def build_cython_extensions():
-    """Cython 확장 모듈 빌드"""
-    logging.info("🔨 Cython 확장 모듈 빌드 시작...")
+    """Build Cython extension modules"""
+    logging.info("Cython extension module build started...")
 
     try:
-        # 프로젝트 루트 디렉토리로 이동해서 빌드 실행
+        # Move to project root directory and execute build
         original_cwd = os.getcwd()
-        project_root = Path(__file__).parent.parent  # build_scripts의 부모 디렉토리
+        project_root = Path(__file__).parent.parent  # Parent directory of build_scripts
         os.chdir(project_root)
 
-        logging.info(f"빌드 디렉토리: {project_root}")
+        logging.info(f"Build directory: {project_root}")
 
-        # 🔧 Windows 인코딩 문제 해결: 환경변수 설정 추가
+        # Windows encoding fix: environment variables
         env = os.environ.copy()
         env['PYTHONIOENCODING'] = 'utf-8'
 
-        # setup.py build_ext --inplace 실행 (프로젝트 루트에서)
+        # Execute setup.py build_ext --inplace (from project root)
         result = subprocess.run([
             sys.executable, "build_scripts/setup.py", "build_ext", "--inplace"
         ], capture_output=True, text=True, encoding='utf-8', errors='replace', env=env, check=True)
 
-        # 원래 디렉토리로 복귀
+        # Return to original directory
         os.chdir(original_cwd)
 
-        logging.info("✓ Cython 빌드 성공")
-        logging.info(f"빌드 출력:\n{result.stdout}")
+        logging.info("Cython build successful")
+        logging.info(f"Build output:\n{result.stdout}")
 
         return True
 
     except subprocess.CalledProcessError as e:
-        # 원래 디렉토리로 복귀
+        # Return to original directory
         if 'original_cwd' in locals():
             os.chdir(original_cwd)
-        logging.error(f"❌ Cython 빌드 실패: {e}")
-        logging.error(f"오류 출력:\n{e.stderr}")
+        logging.error(f"Cython build failed: {e}")
+        logging.error(f"Error output:\n{e.stderr}")
         return False
     except Exception as e:
-        # 원래 디렉토리로 복귀
+        # Return to original directory
         if 'original_cwd' in locals():
             os.chdir(original_cwd)
-        logging.error(f"❌ 빌드 중 예상치 못한 오류: {e}")
+        logging.error(f"Unexpected error during build: {e}")
         return False
 
 def verify_build():

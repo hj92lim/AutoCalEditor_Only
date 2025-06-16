@@ -2,24 +2,24 @@
 chcp 65001 >nul
 setlocal EnableDelayedExpansion
 
-echo 🚀 AutoCalEditor 빌드 시작
+echo AutoCalEditor Build Started
 echo ================================
 
-REM 🔧 Windows 인코딩 문제 해결: 환경변수 설정
+REM Windows encoding fix: environment variables
 set PYTHONIOENCODING=utf-8
 set PYTHONUTF8=1
 
-REM Python 실행
+REM Execute Python
 python build_all.py
 
 if %ERRORLEVEL% EQU 0 (
     echo.
-    echo ✅ 빌드 성공!
-    echo 📁 결과 파일: dist\AutoCalEditor.exe
+    echo Build Successful!
+    echo Result file: dist\AutoCalEditor.exe
     pause
 ) else (
     echo.
-    echo ❌ 빌드 실패!
-    echo 로그를 확인하세요.
+    echo Build Failed!
+    echo Please check the logs.
     pause
 )
