@@ -13,12 +13,16 @@ import logging
 from pathlib import Path
 import glob
 
+# 🔧 Windows 인코딩 문제 해결: 환경변수 설정
+os.environ['PYTHONIOENCODING'] = 'utf-8'
+os.environ['PYTHONUTF8'] = '1'
+
 # 로깅 설정
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(),
+        logging.StreamHandler(sys.stdout),
         logging.FileHandler('build.log', encoding='utf-8')
     ]
 )
@@ -234,12 +238,17 @@ def build_executable():
         
         logging.info(f"실행 명령어: {' '.join(cmd)}")
         
+        # 🔧 Windows 인코딩 문제 해결: 환경변수 설정 추가
+        env = os.environ.copy()
+        env['PYTHONIOENCODING'] = 'utf-8'
+
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             encoding='utf-8',
-            errors='replace'
+            errors='replace',
+            env=env
         )
         
         if result.returncode == 0:

@@ -11,10 +11,17 @@ import shutil
 import logging
 from pathlib import Path
 
+# 🔧 Windows 인코딩 문제 해결: 환경변수 설정
+os.environ['PYTHONIOENCODING'] = 'utf-8'
+os.environ['PYTHONUTF8'] = '1'
+
 # 로깅 설정
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+    ]
 )
 
 def check_dependencies():
@@ -68,10 +75,14 @@ def build_cython_extensions():
 
         logging.info(f"빌드 디렉토리: {project_root}")
 
+        # 🔧 Windows 인코딩 문제 해결: 환경변수 설정 추가
+        env = os.environ.copy()
+        env['PYTHONIOENCODING'] = 'utf-8'
+
         # setup.py build_ext --inplace 실행 (프로젝트 루트에서)
         result = subprocess.run([
             sys.executable, "build_scripts/setup.py", "build_ext", "--inplace"
-        ], capture_output=True, text=True, check=True)
+        ], capture_output=True, text=True, encoding='utf-8', errors='replace', env=env, check=True)
 
         # 원래 디렉토리로 복귀
         os.chdir(original_cwd)
